@@ -24,7 +24,6 @@ export const ConfirmModal: React.FC = () => {
     <AnimatePresence>
       <div
         className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
-        onClick={onCancel}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 8 }}

@@ -423,11 +423,10 @@ export const GanttView: React.FC = () => {
 
           {/* Grouped Rows */}
           {Object.entries(groupedTasks).map(([primaryTag, groupTasks]) => (
-            <div key={primaryTag} className="border-b border-zinc-200/80 dark:border-zinc-800">
-              {/* Group Section Row: Left label strictly pinned in left header column, timeline grid on right */}
+            <div key={primaryTag}>
+              {/* Group Section Row: left label only, no grid cells */}
               <div className="flex border-b border-zinc-200/70 dark:border-zinc-800/70 bg-zinc-100/60 dark:bg-zinc-850/50">
-                {/* Fixed Group Header Cell in the left column */}
-                <div className="w-64 sm:w-72 shrink-0 py-1.5 px-3 sticky left-0 z-10 bg-zinc-100 dark:bg-zinc-850 border-r border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+                <div className="w-64 sm:w-72 shrink-0 py-1.5 px-3 sticky left-0 z-10 bg-zinc-100 dark:bg-zinc-850 border-r border-zinc-200 dark:border-zinc-800 flex items-center">
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
                     <span className="w-2 h-2 rounded-full bg-blue-500" />
                     <span>{primaryTag}</span>
@@ -436,26 +435,7 @@ export const GanttView: React.FC = () => {
                     </span>
                   </span>
                 </div>
-
-                {/* Right Timeline Grid divider filler so vertical gridlines remain perfectly aligned */}
-                <div className="flex items-center pointer-events-none select-none">
-                  {dates.map((dateStr) => {
-                    const isToday = dateStr === todayStr;
-                    const weekend = isWeekend(dateStr);
-                    return (
-                      <div
-                        key={dateStr}
-                        className={`w-9 h-7 shrink-0 border-r border-zinc-200/40 dark:border-zinc-800/40 ${
-                          isToday
-                            ? 'bg-blue-500/10'
-                            : weekend
-                            ? 'bg-black/[0.025] dark:bg-white/[0.025]'
-                            : ''
-                        }`}
-                      />
-                    );
-                  })}
-                </div>
+                {/* Empty right area — no grid cells */}
               </div>
 
               {/* Task Rows */}
@@ -470,28 +450,29 @@ export const GanttView: React.FC = () => {
                     {/* Sticky Task Label Card */}
                     <div
                       onClick={() => openCheckInModal(task, todayStr)}
-                      className={`w-64 sm:w-72 shrink-0 p-2.5 px-3 sticky left-0 z-10 ${statusStyle.stickyBg} border-r border-zinc-200 dark:border-zinc-800 flex flex-col justify-center cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all`}
+                      className={`w-64 sm:w-72 shrink-0 px-3 py-2 sticky left-0 z-10 ${statusStyle.stickyBg} border-r border-zinc-200 dark:border-zinc-800 flex items-center gap-2 min-w-0 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all`}
                     >
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusStyle.badge}`}>
-                          {statusStyle.statusLabel}
-                        </span>
-                        {task.tags.slice(1, 3).map((t) => (
-                          <span
-                            key={t}
-                            className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate"
-                          >
-                            #{t}
-                          </span>
-                        ))}
-                      </div>
-                      <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 line-clamp-1 group-hover:text-blue-600 transition-colors">
+                      {/* Status badge — shrink-0 so it never collapses */}
+                      <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${statusStyle.badge}`}>
+                        {statusStyle.statusLabel}
+                      </span>
+                      {/* Title — truncates when space runs out */}
+                      <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-blue-600 transition-colors">
                         {task.title}
-                      </h4>
+                      </span>
+                      {/* Secondary tags — shrink-0 so they don't squish the title */}
+                      {task.tags.slice(1, 2).map((t) => (
+                        <span
+                          key={t}
+                          className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500 truncate max-w-[60px]"
+                        >
+                          #{t}
+                        </span>
+                      ))}
                     </div>
 
                     {/* Timeline Date Grid Cells */}
-                    <div className="flex items-center">
+                    <div className="flex items-stretch">
                       {dates.map((dateStr) => {
                         const log = logsLookup.get(`${task.id}_${dateStr}`);
                         const isToday = dateStr === todayStr;
@@ -516,7 +497,7 @@ export const GanttView: React.FC = () => {
                             }}
                             onMouseLeave={() => setHoveredCell(null)}
                             title={`${task.title} · ${dateStr} (点击查看或修改详情)`}
-                            className={`w-9 h-11 shrink-0 flex items-center justify-center border-r border-zinc-200/40 dark:border-zinc-800/40 relative cursor-pointer group/cell ${
+                            className={`w-9 h-full shrink-0 flex items-center justify-center border-r border-zinc-200/40 dark:border-zinc-800/40 relative cursor-pointer group/cell ${
                               isToday
                                 ? 'bg-blue-500/10 dark:bg-blue-500/20'
                                 : weekend

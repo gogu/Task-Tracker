@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Background rounded rect -->
+  <rect width="32" height="32" rx="7" fill="#18181b"/>
+
+  <!-- Kanban columns: three bars of different heights -->
+  <rect x="5"  y="14" width="5" height="13" rx="1.5" fill="#71717a"/>
+  <rect x="13" y="8"  width="5" height="19" rx="1.5" fill="#3b82f6"/>
+  <rect x="21" y="11" width="5" height="16" rx="1.5" fill="#71717a"/>
+
+  <!-- Today dot / activity indicator -->
+  <circle cx="26" cy="7" r="4" fill="#3b82f6"/>
+  <circle cx="26" cy="7" r="2" fill="white"/>
+</svg>
+

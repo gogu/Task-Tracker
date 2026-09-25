@@ -7,6 +7,7 @@ export interface TaskItem {
   title: string;
   tags: string[];
   status: TaskStatus;
+  order?: number;                // 泳道内排序权重，越小越靠前
   startDate: string | null;      // 首次产生有效打卡或进入“进行中”的日期
   completedDate: string | null;  // 进入“已完成”状态的日期
   createdAt: string;

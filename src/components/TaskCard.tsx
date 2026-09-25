@@ -18,9 +18,11 @@ import { getTodayString, getRelativeTimeString } from '../utils/date';
 interface TaskCardProps {
   task: TaskItem;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragEnd?: (taskId: string) => void;
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart }) => {
+export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragOver, onDragEnd }) => {
   const {
     openCheckInModal,
     openTaskModal,
@@ -50,6 +52,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart }) => {
     <div
       draggable
       onDragStart={(e) => onDragStart(e, task.id)}
+      onDragOver={onDragOver}
+      onDragEnd={() => onDragEnd?.(task.id)}
       className="group relative bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200/90 dark:border-zinc-800 shadow-xs hover:shadow-md transition-all hover:border-blue-400/50 dark:hover:border-blue-500/40 select-none cursor-grab active:cursor-grabbing overflow-hidden"
     >
       {/* Top Bar with Tags & Actions Menu */}

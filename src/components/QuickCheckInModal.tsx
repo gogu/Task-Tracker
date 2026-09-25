@@ -119,7 +119,6 @@ export const QuickCheckInModal: React.FC = () => {
     <AnimatePresence>
       <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
-        onClick={closeCheckInModal}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 8 }}

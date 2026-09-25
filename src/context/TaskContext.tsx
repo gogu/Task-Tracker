@@ -29,6 +29,7 @@ interface TaskContextType {
   updateTask: (id: string, updates: Partial<TaskItem>) => void;
   deleteTask: (id: string) => void;
   moveTaskStatus: (id: string, newStatus: TaskStatus) => void;
+  reorderTasks: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
 
   // Log Actions
   addOrUpdateLog: (data: {
@@ -239,9 +240,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return Array.from(tagSet).sort();
   }, [tasks]);
 
-  // Filter tasks based on search and tag
+  // Filter tasks based on search and tag, then sort by order
   const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
+    const filtered = tasks.filter((task) => {
       const matchesSearch =
         !searchQuery.trim() ||
         task.title.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
@@ -250,6 +251,13 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const matchesTag = !selectedTag || task.tags.includes(selectedTag);
 
       return matchesSearch && matchesTag;
+    });
+
+    // 按 order 升序排列；无 order 的旧数据以 createdAt 降序兜底（放最前）
+    return filtered.sort((a, b) => {
+      const aOrder = a.order ?? -new Date(a.createdAt).getTime();
+      const bOrder = b.order ?? -new Date(b.createdAt).getTime();
+      return aOrder - bOrder;
     });
   }, [tasks, searchQuery, selectedTag]);
 
@@ -261,6 +269,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       title: data.title.trim(),
       tags: data.tags.map((t) => t.trim()).filter(Boolean),
       status: data.status,
+      order: Date.now(),
       startDate: data.status === 'in_progress' ? today : null,
       completedDate: data.status === 'done' ? today : null,
       createdAt: new Date().toISOString(),
@@ -317,6 +326,45 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
       })
     );
+  };
+
+  const reorderTasks = (draggedId: string, targetId: string, position: 'before' | 'after') => {
+    setTasks((prev) => {
+      const dragged = prev.find((t) => t.id === draggedId);
+      const target = prev.find((t) => t.id === targetId);
+      if (!dragged || !target || draggedId === targetId) return prev;
+
+      // 只在同泳道内排序
+      if (dragged.status !== target.status) return prev;
+
+      // 获取同泳道的所有任务，按当前展示顺序排列
+      const laneTasks = prev
+        .filter((t) => t.status === dragged.status)
+        .sort((a, b) => {
+          const aOrder = a.order ?? -new Date(a.createdAt).getTime();
+          const bOrder = b.order ?? -new Date(b.createdAt).getTime();
+          return aOrder - bOrder;
+        });
+
+      // 从列表中移除被拖拽的任务，再插入到目标位置
+      const withoutDragged = laneTasks.filter((t) => t.id !== draggedId);
+      const targetIdx = withoutDragged.findIndex((t) => t.id === targetId);
+      const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
+      withoutDragged.splice(insertIdx, 0, dragged);
+
+      // 重新分配 order 值（间距 1000，留余量）
+      const orderMap = new Map<string, number>();
+      withoutDragged.forEach((t, i) => {
+        orderMap.set(t.id, (i + 1) * 1000);
+      });
+
+      return prev.map((t) => {
+        if (orderMap.has(t.id)) {
+          return { ...t, order: orderMap.get(t.id)!, updatedAt: new Date().toISOString() };
+        }
+        return t;
+      });
+    });
   };
 
   // Log Actions
@@ -681,6 +729,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateTask,
         deleteTask,
         moveTaskStatus,
+        reorderTasks,
         addOrUpdateLog,
         deleteLog,
         getLogsForTask,
