@@ -599,27 +599,42 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(result.user);
         setTokenExpired(false);
         showToast(`Google 账号已连接：${result.user.displayName || result.user.email}`, 'success');
-        // After login, check if file exists in Drive
+
+        // Check if a data file already exists in Drive
         const found = await findDriveFile(result.accessToken);
         if (found) {
           setDriveFileId(found.id);
           localStorage.setItem(DRIVE_FILE_ID_KEY, found.id);
-          // Ask user if they want to pull cloud data or push local data
-          const wantsPull = await requestConfirm({
-            title: '检测到云端已有数据文件',
-            message: `已成功连接 Google 账号！检测到您的 Google Drive 中已存在「${DRIVE_DATA_FILENAME}」（最后修改于 ${found.modifiedTime || '未知'}）。\n\n是否立即从云端拉取已有数据覆盖本地？`,
-            confirmText: '拉取云端数据',
-            cancelText: '保留当前本地',
-            variant: 'primary',
-          });
-          if (wantsPull) {
-            await pullFromDrive(true);
+
+          // Decide whether to prompt a pull:
+          // 1. Local has no meaningful data (empty task list), OR
+          // 2. Cloud file was modified after the last successful sync (cloud is ahead)
+          const localIsEmpty = tasks.length === 0;
+          const cloudModifiedTime = found.modifiedTime ? new Date(found.modifiedTime).getTime() : null;
+          const lastSync = lastSyncTime ? new Date(lastSyncTime).getTime() : null;
+          const cloudIsNewer = cloudModifiedTime !== null && (lastSync === null || cloudModifiedTime > lastSync);
+
+          if (localIsEmpty || cloudIsNewer) {
+            const reason = localIsEmpty
+              ? '本地暂无任务数据'
+              : `云端文件已于 ${found.modifiedTime ? new Date(found.modifiedTime).toLocaleString('zh-CN') : '未知时间'} 更新，晚于上次同步`;
+            const wantsPull = await requestConfirm({
+              title: '云端有可用数据',
+              message: `${reason}。\n\n是否从 Google Drive 拉取云端数据覆盖本地？`,
+              confirmText: '拉取云端数据',
+              cancelText: '保留当前本地',
+              variant: 'primary',
+            });
+            if (wantsPull) {
+              await pullFromDrive(true);
+            }
           }
+          // else: cloud is not newer — silently keep local, no dialog needed
         } else {
-          // File does not exist yet, prompt to create
+          // No file in Drive yet — prompt to upload local data
           const wantsPush = await requestConfirm({
             title: '初始化云端数据文件',
-            message: `已成功连接 Google Drive！目前云端尚未创建「${DRIVE_DATA_FILENAME}」。\n\n是否立即将当前本地的 ${tasks.length} 项任务上传到 Google Drive 初始化云端文件？`,
+            message: `已连接 Google Drive，但云端尚未创建「${DRIVE_DATA_FILENAME}」。\n\n是否将当前本地的 ${tasks.length} 项任务上传到 Google Drive 初始化云端文件？`,
             confirmText: '立即上传至云端',
             cancelText: '稍后手动上传',
             variant: 'primary',
