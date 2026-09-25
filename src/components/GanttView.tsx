@@ -65,7 +65,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
 };
 
 export const GanttView: React.FC = () => {
-  const { filteredTasks, logs, openCheckInModal } = useTaskContext();
+  const { filteredTasks, logs, openCheckInModal, openTaskDetail } = useTaskContext();
   const [timeRange, setTimeRange] = useState<GanttTimeRange>('month');
   const [pivotDate, setPivotDate] = useState<string>(getTodayString());
   const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
@@ -447,9 +447,9 @@ export const GanttView: React.FC = () => {
                     key={task.id}
                     className={`flex border-b ${statusStyle.border} ${statusStyle.rowBg} transition-colors group`}
                   >
-                    {/* Sticky Task Label Card */}
+                    {/* Sticky Task Label Card — click opens detail drawer */}
                     <div
-                      onClick={() => openCheckInModal(task, todayStr)}
+                      onClick={() => openTaskDetail(task.id)}
                       className={`w-64 sm:w-72 shrink-0 px-3 py-2 sticky left-0 z-10 ${statusStyle.stickyBg} border-r border-zinc-200 dark:border-zinc-800 flex items-center gap-2 min-w-0 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all`}
                     >
                       {/* Status badge — shrink-0 so it never collapses */}

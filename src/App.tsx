@@ -13,6 +13,7 @@ import { TaskModal } from './components/TaskModal';
 import { DriveSyncModal } from './components/DriveSyncModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { Toast } from './components/Toast';
+import { TaskDetailDrawer } from './components/TaskDetailDrawer';
 
 const AppContent: React.FC = () => {
   const { viewMode } = useTaskContext();
@@ -34,6 +35,7 @@ const AppContent: React.FC = () => {
       <TaskModal />
       <DriveSyncModal />
       <ConfirmModal />
+      <TaskDetailDrawer />
       <Toast />
     </div>
   );

@@ -58,6 +58,10 @@ interface TaskContextType {
   openLogModal: (task: TaskItem, date: string, log?: DailyLog) => void;
   closeLogModal: () => void;
 
+  taskDetailTaskId: string | null;
+  openTaskDetail: (taskId: string) => void;
+  closeTaskDetail: () => void;
+
   // Persistence helpers
   resetData: () => void;
   exportData: () => void;
@@ -158,6 +162,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     date?: string;
     log?: DailyLog;
   }>({ isOpen: false });
+
+  const [taskDetailTaskId, setTaskDetailTaskId] = useState<string | null>(null);
 
   // Google Drive state
   const [user, setUser] = useState<AuthUser | User | null>(() => getStoredUser());
@@ -670,6 +676,14 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setLogModalData({ isOpen: false });
   };
 
+  const openTaskDetail = (taskId: string) => {
+    setTaskDetailTaskId(taskId);
+  };
+
+  const closeTaskDetail = () => {
+    setTaskDetailTaskId(null);
+  };
+
   const resetData = async () => {
     const confirmed = await requestConfirm({
       title: '恢复初始示例数据',
@@ -745,6 +759,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         logModalData,
         openLogModal,
         closeLogModal,
+        taskDetailTaskId,
+        openTaskDetail,
+        closeTaskDetail,
         resetData,
         exportData,
         importData,
