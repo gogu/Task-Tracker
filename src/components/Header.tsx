@@ -226,25 +226,31 @@ export const Header: React.FC = () => {
             全部 ({tasks.length})
           </button>
 
-          {allTags.map((tag) => {
-            const count = tasks.filter((t) => t.tags.includes(tag)).length;
-            const isSelected = selectedTag === tag;
-            return (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => setSelectedTag(isSelected ? null : tag)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 flex items-center gap-1 border transition-all ${
-                  isSelected
-                    ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-950/70 dark:border-blue-800 dark:text-blue-300 font-semibold'
-                    : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <span>{tag}</span>
-                <span className="text-[10px] opacity-70">({count})</span>
-              </button>
-            );
-          })}
+          {[...allTags]
+            .sort((a, b) => {
+              const countA = tasks.filter((t) => t.tags.includes(a)).length;
+              const countB = tasks.filter((t) => t.tags.includes(b)).length;
+              return countB - countA;
+            })
+            .map((tag) => {
+              const count = tasks.filter((t) => t.tags.includes(tag)).length;
+              const isSelected = selectedTag === tag;
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => setSelectedTag(isSelected ? null : tag)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 flex items-center gap-1 border transition-all ${
+                    isSelected
+                      ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-950/70 dark:border-blue-800 dark:text-blue-300 font-semibold'
+                      : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <span>{tag}</span>
+                  <span className="text-[10px] opacity-70">({count})</span>
+                </button>
+              );
+            })}
         </div>
 
         {/* Real-time Search Box */}

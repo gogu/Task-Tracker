@@ -68,8 +68,21 @@ export const GanttView: React.FC = () => {
   const { filteredTasks, logs, openCheckInModal, openTaskDetail } = useTaskContext();
   const [timeRange, setTimeRange] = useState<GanttTimeRange>('month');
   const [pivotDate, setPivotDate] = useState<string>(getTodayString());
-  const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
+  // Multi-select status filter: empty set = show all
+  const [statusFilter, setStatusFilter] = useState<Set<TaskStatus>>(new Set());
   const todayStr = getTodayString();
+
+  const toggleStatusFilter = (status: TaskStatus) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(status)) {
+        next.delete(status);
+      } else {
+        next.add(status);
+      }
+      return next;
+    });
+  };
 
   // Tooltip state
   const [hoveredCell, setHoveredCell] = useState<{
@@ -93,10 +106,10 @@ export const GanttView: React.FC = () => {
     return counts;
   }, [filteredTasks]);
 
-  // Filter tasks based on statusFilter
+  // Filter tasks: empty set = all; otherwise only selected statuses
   const displayedTasks = useMemo(() => {
-    if (statusFilter === 'all') return filteredTasks;
-    return filteredTasks.filter((t) => t.status === statusFilter);
+    if (statusFilter.size === 0) return filteredTasks;
+    return filteredTasks.filter((t) => statusFilter.has(t.status));
   }, [filteredTasks, statusFilter]);
 
   // Group displayed tasks by their primary tag
@@ -175,72 +188,48 @@ export const GanttView: React.FC = () => {
             <span>甘特图</span>
           </div>
 
-          {/* Status Filter Segmented Controls */}
-          <div className="flex items-center bg-zinc-200/70 dark:bg-zinc-800 p-0.5 rounded-lg text-xs">
+          {/* Status Filter — multi-select toggles */}
+          <div className="flex items-center gap-1 text-xs flex-wrap">
+            {/* Clear-all / "全部" */}
             <button
               type="button"
-              onClick={() => setStatusFilter('all')}
+              onClick={() => setStatusFilter(new Set())}
               className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer flex items-center gap-1 ${
-                statusFilter === 'all'
-                  ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs font-semibold'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                statusFilter.size === 0
+                  ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-2xs font-semibold'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
               }`}
             >
               <span>全部</span>
               <span className="text-[10px] opacity-75 font-mono">({statusCounts.all})</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('in_progress')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer flex items-center gap-1 ${
-                statusFilter === 'in_progress'
-                  ? 'bg-white dark:bg-zinc-700 text-blue-600 dark:text-blue-400 shadow-2xs font-semibold'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-blue-500" />
-              <span>进行中</span>
-              <span className="text-[10px] opacity-75 font-mono">({statusCounts.in_progress})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('backlog')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer flex items-center gap-1 ${
-                statusFilter === 'backlog'
-                  ? 'bg-white dark:bg-zinc-700 text-slate-800 dark:text-slate-200 shadow-2xs font-semibold'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-slate-400" />
-              <span>未开始</span>
-              <span className="text-[10px] opacity-75 font-mono">({statusCounts.backlog})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('done')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer flex items-center gap-1 ${
-                statusFilter === 'done'
-                  ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-2xs font-semibold'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>已完成</span>
-              <span className="text-[10px] opacity-75 font-mono">({statusCounts.done})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('paused')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer flex items-center gap-1 ${
-                statusFilter === 'paused'
-                  ? 'bg-white dark:bg-zinc-700 text-amber-600 dark:text-amber-400 shadow-2xs font-semibold'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span>已搁置</span>
-              <span className="text-[10px] opacity-75 font-mono">({statusCounts.paused})</span>
-            </button>
+
+            {(
+              [
+                { key: 'in_progress', dot: 'bg-blue-500',    label: '进行中', activeText: 'text-blue-600 dark:text-blue-300' },
+                { key: 'backlog',     dot: 'bg-slate-400',   label: '未开始', activeText: 'text-slate-700 dark:text-slate-200' },
+                { key: 'done',        dot: 'bg-emerald-500', label: '已完成', activeText: 'text-emerald-600 dark:text-emerald-300' },
+                { key: 'paused',      dot: 'bg-amber-500',   label: '已搁置', activeText: 'text-amber-600 dark:text-amber-300' },
+              ] as const
+            ).map(({ key, dot, label, activeText }) => {
+              const active = statusFilter.has(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => toggleStatusFilter(key)}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer flex items-center gap-1 border ${
+                    active
+                      ? `bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 shadow-2xs font-semibold ${activeText}`
+                      : 'border-transparent bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${dot}`} />
+                  <span>{label}</span>
+                  <span className="text-[10px] opacity-75 font-mono">({statusCounts[key]})</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -547,20 +536,10 @@ export const GanttView: React.FC = () => {
                 '当前暂无匹配的任务数据，请点击「+ 新建任务」添加'
               ) : (
                 <div className="flex flex-col items-center justify-center gap-2">
-                  <span>
-                    当前无「
-                    {statusFilter === 'in_progress'
-                      ? '进行中'
-                      : statusFilter === 'backlog'
-                      ? '未开始'
-                      : statusFilter === 'done'
-                      ? '已完成'
-                      : '已搁置'}
-                    」状态的任务
-                  </span>
+                  <span>当前筛选条件下暂无任务</span>
                   <button
                     type="button"
-                    onClick={() => setStatusFilter('all')}
+                    onClick={() => setStatusFilter(new Set())}
                     className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-medium"
                   >
                     查看全部任务 ({statusCounts.all})

@@ -100,7 +100,7 @@ export const KanbanView: React.FC = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start min-h-[calc(100vh-220px)]">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
       {lanes.map(({ key, icon }) => {
         const config = TASK_STATUS_CONFIG[key];
         const laneTasks = filteredTasks.filter((t) => t.status === key);
@@ -112,14 +112,14 @@ export const KanbanView: React.FC = () => {
             onDragOver={(e) => handleLaneDragOver(e, key)}
             onDragLeave={(e) => handleLaneDragLeave(e, key)}
             onDrop={(e) => handleDrop(e, key)}
-            className={`flex flex-col rounded-2xl border transition-all duration-150 min-h-[480px] bg-zinc-50/70 dark:bg-zinc-900/30 ${
+            className={`flex flex-col rounded-2xl border transition-all duration-150 bg-zinc-50/70 dark:bg-zinc-900/30 ${
               isCrossLaneDragTarget
                 ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/30 dark:bg-blue-950/20'
                 : 'border-zinc-200/80 dark:border-zinc-800'
             }`}
           >
             {/* Lane Header */}
-            <div className="p-3.5 border-b border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between">
+            <div className="p-3 border-b border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {icon}
                 <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-200">
@@ -141,7 +141,7 @@ export const KanbanView: React.FC = () => {
             </div>
 
             {/* Cards Container */}
-            <div className="p-3 pb-4 flex-1 flex flex-col gap-3">
+            <div className="p-2 pb-3 flex-1 flex flex-col gap-1.5">
               {laneTasks.map((task) => {
                 const isDropBefore = dragOverCardId === task.id && dropPosition === 'before';
                 const isDropAfter = dragOverCardId === task.id && dropPosition === 'after';
