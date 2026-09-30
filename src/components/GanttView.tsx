@@ -9,6 +9,7 @@ import {
   Sparkles,
   Info,
   CheckCircle2,
+  GripVertical,
 } from 'lucide-react';
 import { TaskItem, DailyLog, GanttTimeRange, PROGRESS_TYPE_CONFIG, ProgressType, TaskStatus } from '../types';
 import { useTaskContext } from '../context/TaskContext';
@@ -26,8 +27,8 @@ const getRowStatusClasses = (status: TaskStatus) => {
   switch (status) {
     case 'in_progress':
       return {
-        // 进行中的保持白色
-        rowBg: 'bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-850',
+        // 进行中：保持接近白色/深色背景，无彩色
+        rowBg: 'bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/60',
         stickyBg: 'bg-white/95 dark:bg-zinc-900/95',
         border: 'border-zinc-200/70 dark:border-zinc-800',
         badge: 'bg-blue-50 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60',
@@ -35,29 +36,29 @@ const getRowStatusClasses = (status: TaskStatus) => {
       };
     case 'done':
       return {
-        // 完成：柔和绿色整行背景
-        rowBg: 'bg-emerald-50/70 hover:bg-emerald-100/50 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/40',
-        stickyBg: 'bg-emerald-50/95 dark:bg-emerald-950/80',
-        border: 'border-emerald-200/70 dark:border-emerald-900/40',
+        // 完成：浅绿色，深色模式下极淡
+        rowBg: 'bg-emerald-50/60 hover:bg-emerald-100/50 dark:bg-emerald-950/12 dark:hover:bg-emerald-950/20',
+        stickyBg: 'bg-emerald-50/95 dark:bg-emerald-950/30',
+        border: 'border-emerald-200/60 dark:border-emerald-900/30',
         badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60',
         statusLabel: '已完成',
       };
     case 'paused':
       return {
-        // 搁置：柔和橙黄色整行背景
-        rowBg: 'bg-amber-50/70 hover:bg-amber-100/50 dark:bg-amber-950/25 dark:hover:bg-amber-950/40',
-        stickyBg: 'bg-amber-50/95 dark:bg-amber-950/80',
-        border: 'border-amber-200/70 dark:border-amber-900/40',
+        // 搁置：浅橙黄，深色模式下极淡
+        rowBg: 'bg-amber-50/60 hover:bg-amber-100/50 dark:bg-amber-950/12 dark:hover:bg-amber-950/20',
+        stickyBg: 'bg-amber-50/95 dark:bg-amber-950/30',
+        border: 'border-amber-200/60 dark:border-amber-900/30',
         badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60',
         statusLabel: '已搁置',
       };
     case 'backlog':
     default:
       return {
-        // 未开始：柔和灰冷色整行背景
-        rowBg: 'bg-slate-100/65 hover:bg-slate-100/90 dark:bg-zinc-800/35 dark:hover:bg-zinc-800/55',
-        stickyBg: 'bg-slate-100/95 dark:bg-zinc-800/80',
-        border: 'border-slate-200/80 dark:border-zinc-700/60',
+        // 未开始：冷灰色，深色模式下微弱
+        rowBg: 'bg-slate-100/60 hover:bg-slate-100/90 dark:bg-zinc-800/30 dark:hover:bg-zinc-800/50',
+        stickyBg: 'bg-slate-100/95 dark:bg-zinc-800/60',
+        border: 'border-slate-200/70 dark:border-zinc-700/50',
         badge: 'bg-slate-200/80 text-slate-700 dark:bg-zinc-700 dark:text-zinc-200 border border-slate-300/70 dark:border-zinc-600',
         statusLabel: '未开始',
       };
@@ -65,7 +66,12 @@ const getRowStatusClasses = (status: TaskStatus) => {
 };
 
 export const GanttView: React.FC = () => {
-  const { filteredTasks, logs, openCheckInModal, openTaskDetail } = useTaskContext();
+  const {
+    filteredTasks, logs,
+    openCheckInModal, openTaskDetail,
+    reorderTasksGlobal,
+    ganttGroupOrder, setGanttGroupOrder,
+  } = useTaskContext();
   const [timeRange, setTimeRange] = useState<GanttTimeRange>('month');
   const [pivotDate, setPivotDate] = useState<string>(getTodayString());
   // Multi-select status filter: empty set = show all
@@ -94,6 +100,21 @@ export const GanttView: React.FC = () => {
   } | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Drag-to-pan on the date header
+  const isDraggingHeader = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartScrollLeft = useRef(0);
+  const [headerCursor, setHeaderCursor] = useState<'grab' | 'grabbing'>('grab');
+
+  // ── Two-level drag sort state ─────────────────────────────────────────────
+  // Group drag
+  const [draggingGroupTag, setDraggingGroupTag] = useState<string | null>(null);
+  const [dragOverGroupTag, setDragOverGroupTag] = useState<string | null>(null);
+  const [groupDropPos, setGroupDropPos] = useState<'before' | 'after'>('before');
+  // Task row drag
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [taskDropPos, setTaskDropPos] = useState<'before' | 'after'>('before');
 
   // Status counts for filter tabs
   const statusCounts = useMemo(() => {
@@ -175,6 +196,111 @@ export const GanttView: React.FC = () => {
 
   const handleResetToday = () => {
     setPivotDate(todayStr);
+  };
+
+  // ── Drag-to-pan on the date header ──────────────────────────────────────
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    if (!scrollContainerRef.current) return;
+    isDraggingHeader.current = true;
+    dragStartX.current = e.clientX;
+    dragStartScrollLeft.current = scrollContainerRef.current.scrollLeft;
+    setHeaderCursor('grabbing');
+    e.preventDefault();
+  };
+
+  const handleHeaderMouseMove = (e: React.MouseEvent) => {
+    if (!isDraggingHeader.current || !scrollContainerRef.current) return;
+    const dx = e.clientX - dragStartX.current;
+    scrollContainerRef.current.scrollLeft = dragStartScrollLeft.current - dx;
+  };
+
+  const handleHeaderMouseUp = () => {
+    isDraggingHeader.current = false;
+    setHeaderCursor('grab');
+  };
+
+  // ── Sorted group entries (respects ganttGroupOrder) ───────────────────────
+  const sortedGroupEntries = useMemo(() => {
+    const allGroupKeys = Object.keys(groupedTasks);
+    const ordered = ganttGroupOrder.filter((tag) => allGroupKeys.includes(tag));
+    const newTags = allGroupKeys.filter((tag) => !ordered.includes(tag));
+    return [...ordered, ...newTags].map((tag) => [tag, groupedTasks[tag]] as [string, TaskItem[]]);
+  }, [groupedTasks, ganttGroupOrder]);
+
+  // ── Group drag handlers ───────────────────────────────────────────────────
+  const handleGroupDragStart = (e: React.DragEvent, tag: string) => {
+    setDraggingGroupTag(tag);
+    e.dataTransfer.setData('dragType', 'group');
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleGroupDragOver = (e: React.DragEvent, tag: string) => {
+    if (e.dataTransfer.getData('dragType') === 'task') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (tag === draggingGroupTag) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragOverGroupTag(tag);
+    setGroupDropPos(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+  };
+
+  const handleGroupDragLeave = (e: React.DragEvent) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      setDragOverGroupTag(null);
+    }
+  };
+
+  const handleGroupDrop = (e: React.DragEvent, targetTag: string) => {
+    e.preventDefault();
+    if (!draggingGroupTag || draggingGroupTag === targetTag) return;
+    const allKeys = sortedGroupEntries.map(([tag]) => tag);
+    const next = allKeys.filter((t) => t !== draggingGroupTag);
+    const idx = next.indexOf(targetTag);
+    next.splice(groupDropPos === 'before' ? idx : idx + 1, 0, draggingGroupTag);
+    setGanttGroupOrder(next);
+    setDraggingGroupTag(null);
+    setDragOverGroupTag(null);
+  };
+
+  const handleGroupDragEnd = () => {
+    setDraggingGroupTag(null);
+    setDragOverGroupTag(null);
+  };
+
+  // ── Task row drag handlers ────────────────────────────────────────────────
+  const handleTaskDragStart = (e: React.DragEvent, taskId: string) => {
+    setDraggingTaskId(taskId);
+    e.dataTransfer.setData('dragType', 'task');
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleTaskDragOver = (e: React.DragEvent, taskId: string) => {
+    if (e.dataTransfer.getData('dragType') === 'group') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (taskId === draggingTaskId) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragOverTaskId(taskId);
+    setTaskDropPos(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+  };
+
+  const handleTaskDragLeave = (e: React.DragEvent) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      setDragOverTaskId(null);
+    }
+  };
+
+  const handleTaskDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!draggingTaskId || draggingTaskId === targetId) return;
+    reorderTasksGlobal(draggingTaskId, targetId, taskDropPos);
+    setDraggingTaskId(null);
+    setDragOverTaskId(null);
+  };
+
+  const handleTaskDragEnd = () => {
+    setDraggingTaskId(null);
+    setDragOverTaskId(null);
   };
 
   return (
@@ -364,8 +490,15 @@ export const GanttView: React.FC = () => {
               <span className="text-[10px] font-normal text-zinc-400">点击方格查看/修改详情</span>
             </div>
 
-            {/* Date Columns */}
-            <div className="flex">
+            {/* Date Columns — draggable to pan horizontally */}
+            <div
+              className="flex"
+              style={{ cursor: headerCursor }}
+              onMouseDown={handleHeaderMouseDown}
+              onMouseMove={handleHeaderMouseMove}
+              onMouseUp={handleHeaderMouseUp}
+              onMouseLeave={handleHeaderMouseUp}
+            >
               {dates.map((dateStr) => {
                 const [_, month, day] = dateStr.split('-');
                 const isToday = dateStr === todayStr;
@@ -410,62 +543,132 @@ export const GanttView: React.FC = () => {
             </div>
           </div>
 
-          {/* Grouped Rows */}
-          {Object.entries(groupedTasks).map(([primaryTag, groupTasks]) => (
-            <div key={primaryTag}>
-              {/* Group Section Row: left label only, no grid cells */}
-              <div className="flex border-b border-zinc-200/70 dark:border-zinc-800/70 bg-zinc-100/60 dark:bg-zinc-850/50">
-                <div className="w-64 sm:w-72 shrink-0 py-1.5 px-3 sticky left-0 z-10 bg-zinc-100 dark:bg-zinc-850 border-r border-zinc-200 dark:border-zinc-800 flex items-center">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
-                    <span className="w-2 h-2 rounded-full bg-blue-500" />
-                    <span>{primaryTag}</span>
-                    <span className="text-[11px] font-normal text-zinc-500 ml-1">
-                      ({groupTasks.length} 项)
+          {/* Grouped Rows — sortedGroupEntries respects ganttGroupOrder */}
+          {sortedGroupEntries.map(([primaryTag, groupTasks]) => {
+            const isGroupDragOver = dragOverGroupTag === primaryTag;
+            const isDraggingThisGroup = draggingGroupTag === primaryTag;
+            return (
+              <div
+                key={primaryTag}
+                draggable
+                onDragStart={(e) => handleGroupDragStart(e, primaryTag)}
+                onDragOver={(e) => handleGroupDragOver(e, primaryTag)}
+                onDragLeave={handleGroupDragLeave}
+                onDrop={(e) => handleGroupDrop(e, primaryTag)}
+                onDragEnd={handleGroupDragEnd}
+                className={`relative transition-opacity ${isDraggingThisGroup ? 'opacity-40' : ''}`}
+              >
+                {/* Group insertion line — before */}
+                {isGroupDragOver && groupDropPos === 'before' && (
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-30 pointer-events-none" />
+                )}
+
+                {/* Group Section Row */}
+                <div className="flex border-b border-zinc-200/70 dark:border-zinc-800/70 bg-zinc-100/60 dark:bg-zinc-800/40 cursor-grab active:cursor-grabbing">
+                  <div className="w-64 sm:w-72 shrink-0 py-1.5 px-2 sticky left-0 z-10 bg-zinc-100 dark:bg-zinc-800/70 border-r border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5">
+                    <GripVertical className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-600 shrink-0" />
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      <span>{primaryTag}</span>
+                      <span className="text-[11px] font-normal text-zinc-500 ml-1">
+                        ({groupTasks.length} 项)
+                      </span>
                     </span>
-                  </span>
+                  </div>
+                  {/* Empty right area */}
                 </div>
-                {/* Empty right area — no grid cells */}
-              </div>
 
-              {/* Task Rows */}
-              {groupTasks.map((task) => {
-                const statusStyle = getRowStatusClasses(task.status);
+                {/* Task Rows */}
+                {groupTasks.map((task) => {
+                  const statusStyle = getRowStatusClasses(task.status);
+                  const isTaskDragOver = dragOverTaskId === task.id;
+                  const isDraggingThisTask = draggingTaskId === task.id;
 
-                return (
-                  <div
-                    key={task.id}
-                    className={`flex border-b ${statusStyle.border} ${statusStyle.rowBg} transition-colors group`}
-                  >
-                    {/* Sticky Task Label Card — click opens detail drawer */}
+                  return (
                     <div
-                      onClick={() => openTaskDetail(task.id)}
-                      className={`w-64 sm:w-72 shrink-0 px-3 py-2 sticky left-0 z-10 ${statusStyle.stickyBg} border-r border-zinc-200 dark:border-zinc-800 flex items-center gap-2 min-w-0 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all`}
+                      key={task.id}
+                      draggable
+                      onDragStart={(e) => handleTaskDragStart(e, task.id)}
+                      onDragOver={(e) => handleTaskDragOver(e, task.id)}
+                      onDragLeave={handleTaskDragLeave}
+                      onDrop={(e) => handleTaskDrop(e, task.id)}
+                      onDragEnd={handleTaskDragEnd}
+                      className={`flex border-b ${statusStyle.border} ${statusStyle.rowBg} transition-all group relative ${
+                        isDraggingThisTask ? 'opacity-40' : ''
+                      }`}
                     >
-                      {/* Status badge — shrink-0 so it never collapses */}
-                      <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${statusStyle.badge}`}>
-                        {statusStyle.statusLabel}
-                      </span>
-                      {/* Title — truncates when space runs out */}
-                      <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-blue-600 transition-colors">
-                        {task.title}
-                      </span>
-                      {/* Secondary tags — shrink-0 so they don't squish the title */}
-                      {task.tags.slice(1, 2).map((t) => (
-                        <span
-                          key={t}
-                          className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500 truncate max-w-[60px]"
+                      {/* Task insertion line — before */}
+                      {isTaskDragOver && taskDropPos === 'before' && (
+                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-20 pointer-events-none" />
+                      )}
+                      {/* Task insertion line — after */}
+                      {isTaskDragOver && taskDropPos === 'after' && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 z-20 pointer-events-none" />
+                      )}
+
+                      {/* Sticky Task Label Card */}
+                      <div
+                        className={`w-64 sm:w-72 shrink-0 px-2 py-2 sticky left-0 z-10 ${statusStyle.stickyBg} border-r border-zinc-200 dark:border-zinc-800 flex items-center gap-1.5 min-w-0`}
+                      >
+                        {/* Drag handle */}
+                        <GripVertical className="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-700 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing" />
+                        {/* Content — click opens detail */}
+                        <div
+                          onClick={() => openTaskDetail(task.id)}
+                          className="flex items-center gap-1.5 min-w-0 flex-1 cursor-pointer hover:opacity-80 transition-opacity"
                         >
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
+                          <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${statusStyle.badge}`}>
+                            {statusStyle.statusLabel}
+                          </span>
+                          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-blue-600 transition-colors">
+                            {task.title}
+                          </span>
+                          {task.tags.slice(1, 2).map((t) => (
+                            <span
+                              key={t}
+                              className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500 truncate max-w-[60px]"
+                            >
+                              #{t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
 
                     {/* Timeline Date Grid Cells */}
                     <div className="flex items-stretch">
-                      {dates.map((dateStr) => {
+                      {dates.map((dateStr, dateIdx) => {
                         const log = logsLookup.get(`${task.id}_${dateStr}`);
                         const isToday = dateStr === todayStr;
                         const weekend = isWeekend(dateStr);
+
+                        // Streak detection: check prev/next dates for same-task logs
+                        const prevDate = dateIdx > 0 ? dates[dateIdx - 1] : null;
+                        const nextDate = dateIdx < dates.length - 1 ? dates[dateIdx + 1] : null;
+                        const prevLog = prevDate ? logsLookup.get(`${task.id}_${prevDate}`) : null;
+                        const nextLog = nextDate ? logsLookup.get(`${task.id}_${nextDate}`) : null;
+
+                        // A cell is connected left/right if neighbor also has a log (any type)
+                        const connectedLeft = !!(log && prevLog);
+                        const connectedRight = !!(log && nextLog);
+
+                        // Rounded corners based on streak position
+                        const roundedClass = log
+                          ? [
+                              !connectedLeft ? 'rounded-l-md' : '',
+                              !connectedRight ? 'rounded-r-md' : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' ') || 'rounded-none'
+                          : '';
+
+                        // Bar color
+                        const barColor = log
+                          ? log.progressType === 'progress'
+                            ? 'bg-blue-500'
+                            : log.progressType === 'rest'
+                            ? 'bg-amber-500'
+                            : 'bg-emerald-600'
+                          : '';
 
                         return (
                           <div
@@ -494,30 +697,33 @@ export const GanttView: React.FC = () => {
                                 : ''
                             } hover:bg-blue-500/15 dark:hover:bg-blue-500/25 transition-colors`}
                           >
-                            {/* If today indicator line */}
+                            {/* Today indicator line */}
                             {isToday && (
                               <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-blue-500/50 pointer-events-none" />
                             )}
 
-                            {/* Discrete Block Rendering based on Log Progress Type */}
                             {log ? (
+                              /* ── Unified block: h-6, centered, connected edges flush to cell border ── */
                               <div
-                                className={`w-6 h-6 rounded-md flex items-center justify-center transition-all shadow-xs group-hover/cell:scale-110 ${
-                                  log.progressType === 'progress'
-                                    ? 'bg-blue-500 text-white'
-                                    : log.progressType === 'rest'
-                                    ? 'bg-amber-500 text-white'
-                                    : 'bg-emerald-600 text-white'
+                                className={`absolute top-1/2 -translate-y-1/2 h-6 transition-all group-hover/cell:h-7 pointer-events-none ${barColor} ${roundedClass} ${
+                                  connectedLeft ? 'left-0' : 'left-[14%]'
+                                } ${
+                                  connectedRight ? 'right-0' : 'right-[14%]'
                                 }`}
                               >
-                                {log.progressType === 'completed' ? (
-                                  <CheckCircle2 className="w-3.5 h-3.5 stroke-2" />
-                                ) : (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                                {/* Icon on isolated blocks and streak-end cells */}
+                                {!connectedRight && (
+                                  <span className="absolute inset-0 flex items-center justify-center">
+                                    {log.progressType === 'completed' ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 stroke-2 text-white" />
+                                    ) : (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
+                                    )}
+                                  </span>
                                 )}
                               </div>
                             ) : (
-                              // Blank cell with faint hover dot
+                              /* Blank cell hover dot */
                               <div className="w-1.5 h-1.5 rounded-full bg-transparent group-hover/cell:bg-blue-400/50 transition-colors" />
                             )}
                           </div>
@@ -527,8 +733,16 @@ export const GanttView: React.FC = () => {
                   </div>
                 );
               })}
-            </div>
-          ))}
+
+                {/* Group insertion line — after */}
+                {isGroupDragOver && groupDropPos === 'after' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 z-30 pointer-events-none" />
+                )}
+              </div>
+            );
+          })}
+
+
 
           {displayedTasks.length === 0 && (
             <div className="py-16 text-center text-xs text-zinc-400">

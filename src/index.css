@@ -1,1 +1,48 @@
 @import "tailwindcss";
+
+/* ── Custom Scrollbar ───────────────────────────────────────────────────── */
+:root {
+  --sb-thumb: #c1c5cc;
+  --sb-thumb-hover: #9ca3af;
+  --sb-track: transparent;
+  --sb-size: 6px;
+}
+
+/* Project uses prefers-color-scheme (no .dark class toggle) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sb-thumb: #3f4451;
+    --sb-thumb-hover: #52586a;
+  }
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-thumb) var(--sb-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--sb-size);
+  height: var(--sb-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--sb-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-thumb-hover);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

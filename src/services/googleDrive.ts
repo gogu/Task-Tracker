@@ -8,6 +8,7 @@ export interface DriveSyncPayload {
   updatedAt: string;
   tasks: TaskItem[];
   logs: DailyLog[];
+  ganttGroupOrder?: string[];
 }
 
 export interface DriveFileInfo {
@@ -57,7 +58,7 @@ export async function findDriveFile(accessToken: string): Promise<DriveFileInfo 
  */
 export async function createDriveFile(
   accessToken: string,
-  initialData: { tasks: TaskItem[]; logs: DailyLog[] }
+  initialData: { tasks: TaskItem[]; logs: DailyLog[]; ganttGroupOrder?: string[] }
 ): Promise<DriveFileInfo> {
   const metadata = {
     name: DRIVE_DATA_FILENAME,
@@ -71,6 +72,7 @@ export async function createDriveFile(
     updatedAt: new Date().toISOString(),
     tasks: initialData.tasks,
     logs: initialData.logs,
+    ganttGroupOrder: initialData.ganttGroupOrder,
   };
 
   // Use multipart upload to create file with initial content
@@ -142,7 +144,7 @@ export async function readDriveFileContent(
 export async function updateDriveFileContent(
   accessToken: string,
   fileId: string,
-  data: { tasks: TaskItem[]; logs: DailyLog[] }
+  data: { tasks: TaskItem[]; logs: DailyLog[]; ganttGroupOrder?: string[] }
 ): Promise<DriveFileInfo> {
   const payload: DriveSyncPayload = {
     version: 1,
@@ -150,6 +152,7 @@ export async function updateDriveFileContent(
     updatedAt: new Date().toISOString(),
     tasks: data.tasks,
     logs: data.logs,
+    ganttGroupOrder: data.ganttGroupOrder,
   };
 
   const url = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,modifiedTime`;

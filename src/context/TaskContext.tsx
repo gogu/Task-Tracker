@@ -30,6 +30,7 @@ interface TaskContextType {
   deleteTask: (id: string) => void;
   moveTaskStatus: (id: string, newStatus: TaskStatus) => void;
   reorderTasks: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
+  reorderTasksGlobal: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
 
   // Log Actions
   addOrUpdateLog: (data: {
@@ -66,6 +67,10 @@ interface TaskContextType {
   resetData: () => void;
   exportData: () => void;
   importData: (jsonStr: string) => boolean;
+
+  // Gantt group order (synced to Drive)
+  ganttGroupOrder: string[];
+  setGanttGroupOrder: (order: string[]) => void;
 
   // In-App Confirm Dialog & Toast
   confirmDialogState: ConfirmDialogState | null;
@@ -108,6 +113,7 @@ export interface ConfirmDialogState extends ConfirmDialogOptions {
 const STORAGE_KEY = 'media_task_tracker_data_v1';
 const DRIVE_FILE_ID_KEY = 'media_tracker_drive_file_id';
 const LAST_SYNC_KEY = 'media_tracker_drive_last_sync';
+const GANTT_GROUP_ORDER_KEY = 'gantt_group_order_v1';
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
 
@@ -145,6 +151,18 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  const [ganttGroupOrder, setGanttGroupOrderState] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(GANTT_GROUP_ORDER_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const setGanttGroupOrder = useCallback((order: string[]) => {
+    setGanttGroupOrderState(order);
+    localStorage.setItem(GANTT_GROUP_ORDER_KEY, JSON.stringify(order));
+  }, []);
 
   // Modals state
   const [checkInModalTask, setCheckInModalTask] = useState<TaskItem | null>(null);
@@ -373,6 +391,41 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   };
 
+  // Gantt-view variant: no status restriction — tasks in same tag-group can have different statuses
+  const reorderTasksGlobal = (draggedId: string, targetId: string, position: 'before' | 'after') => {
+    setTasks((prev) => {
+      const dragged = prev.find((t) => t.id === draggedId);
+      const target = prev.find((t) => t.id === targetId);
+      if (!dragged || !target || draggedId === targetId) return prev;
+
+      // Sort all tasks by current order
+      const sorted = [...prev].sort((a, b) => {
+        const aOrder = a.order ?? -new Date(a.createdAt).getTime();
+        const bOrder = b.order ?? -new Date(b.createdAt).getTime();
+        return aOrder - bOrder;
+      });
+
+      // Remove dragged, reinsert at target position
+      const withoutDragged = sorted.filter((t) => t.id !== draggedId);
+      const targetIdx = withoutDragged.findIndex((t) => t.id === targetId);
+      const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
+      withoutDragged.splice(insertIdx, 0, dragged);
+
+      // Reassign order values with spacing
+      const orderMap = new Map<string, number>();
+      withoutDragged.forEach((t, i) => {
+        orderMap.set(t.id, (i + 1) * 1000);
+      });
+
+      return prev.map((t) => {
+        if (orderMap.has(t.id)) {
+          return { ...t, order: orderMap.get(t.id)!, updatedAt: new Date().toISOString() };
+        }
+        return t;
+      });
+    });
+  };
+
   // Log Actions
   const addOrUpdateLog = ({
     taskId,
@@ -491,11 +544,11 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (found) {
             fileId = found.id;
           } else {
-            const created = await createDriveFile(token, { tasks, logs });
+            const created = await createDriveFile(token, { tasks, logs, ganttGroupOrder });
             fileId = created.id;
           }
         } else {
-          await updateDriveFileContent(token, fileId, { tasks, logs });
+          await updateDriveFileContent(token, fileId, { tasks, logs, ganttGroupOrder });
         }
 
         if (fileId) {
@@ -518,7 +571,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsSyncing(false);
       }
     },
-    [driveFileId, tasks, logs, requestConfirm, showToast, user]
+    [driveFileId, tasks, logs, ganttGroupOrder, requestConfirm, showToast, user]
   );
 
   const pullFromDrive = useCallback(
@@ -568,6 +621,10 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         setTasks(payload.tasks);
         setLogs(payload.logs);
+        // Restore group order if present in cloud data
+        if (Array.isArray(payload.ganttGroupOrder) && payload.ganttGroupOrder.length > 0) {
+          setGanttGroupOrder(payload.ganttGroupOrder);
+        }
 
         setDriveFileId(fileId);
         localStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
@@ -587,7 +644,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsSyncing(false);
       }
     },
-    [driveFileId, requestConfirm, showToast, user]
+    [driveFileId, requestConfirm, showToast, user, setGanttGroupOrder]
   );
 
   const loginWithGoogle = async (forceConsent: boolean = false): Promise<boolean> => {
@@ -759,6 +816,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         deleteTask,
         moveTaskStatus,
         reorderTasks,
+        reorderTasksGlobal,
         addOrUpdateLog,
         deleteLog,
         getLogsForTask,
@@ -780,6 +838,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         resetData,
         exportData,
         importData,
+        ganttGroupOrder,
+        setGanttGroupOrder,
         confirmDialogState,
         requestConfirm,
         toast,
