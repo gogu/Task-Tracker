@@ -703,17 +703,18 @@ export const GanttView: React.FC = () => {
                             )}
 
                             {log ? (
-                              /* ── Unified block: h-6, centered, connected edges flush to cell border ── */
-                              <div
-                                className={`absolute top-1/2 -translate-y-1/2 h-6 transition-all group-hover/cell:h-7 pointer-events-none ${barColor} ${roundedClass} ${
-                                  connectedLeft ? 'left-0' : 'left-[14%]'
-                                } ${
-                                  connectedRight ? 'right-0' : 'right-[14%]'
-                                }`}
-                              >
-                                {/* Icon on isolated blocks and streak-end cells */}
+                              <>
+                                {/* ── Bar ── */}
+                                <div
+                                  className={`absolute top-1/2 -translate-y-1/2 h-6 transition-all group-hover/cell:h-7 pointer-events-none ${barColor} ${roundedClass} ${
+                                    connectedLeft ? 'left-0' : 'left-[14%]'
+                                  } ${
+                                    connectedRight ? 'right-0' : 'right-[14%]'
+                                  }`}
+                                />
+                                {/* ── Icon: centered in the full cell, only on trailing edge ── */}
                                 {!connectedRight && (
-                                  <span className="absolute inset-0 flex items-center justify-center">
+                                  <span className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                                     {log.progressType === 'completed' ? (
                                       <CheckCircle2 className="w-3.5 h-3.5 stroke-2 text-white" />
                                     ) : (
@@ -721,7 +722,7 @@ export const GanttView: React.FC = () => {
                                     )}
                                   </span>
                                 )}
-                              </div>
+                              </>
                             ) : (
                               /* Blank cell hover dot */
                               <div className="w-1.5 h-1.5 rounded-full bg-transparent group-hover/cell:bg-blue-400/50 transition-colors" />
