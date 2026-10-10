@@ -1,10 +1,36 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertTriangle, HelpCircle, X } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 
 export const ConfirmModal: React.FC = () => {
   const { confirmDialogState } = useTaskContext();
+
+  const isOpen = !!confirmDialogState?.isOpen;
+  const onConfirm = confirmDialogState?.onConfirm;
+  const onCancel = confirmDialogState?.onCancel;
+
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancelRef.current?.();
+      } else if (e.key === 'Enter' || ((e.ctrlKey || e.metaKey) && e.key === 'Enter')) {
+        e.preventDefault();
+        onConfirmRef.current?.();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
 
   if (!confirmDialogState || !confirmDialogState.isOpen) return null;
 
@@ -14,8 +40,6 @@ export const ConfirmModal: React.FC = () => {
     confirmText = '确认',
     cancelText = '取消',
     variant = 'primary',
-    onConfirm,
-    onCancel,
   } = confirmDialogState;
 
   const isDanger = variant === 'danger';

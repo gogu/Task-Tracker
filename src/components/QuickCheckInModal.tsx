@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Calendar,
@@ -41,6 +41,7 @@ export const QuickCheckInModal: React.FC = () => {
   const [note, setNote] = useState<string>('');
   const [markAsCompleted, setMarkAsCompleted] = useState<boolean>(false);
   const [existingLogId, setExistingLogId] = useState<string | null>(null);
+  const isSubmittingRef = useRef(false);
 
   const todayStr = getTodayString();
   const yesterdayStr = getYesterdayString();
@@ -56,6 +57,7 @@ export const QuickCheckInModal: React.FC = () => {
 
   // Load existing log for the selected date
   useEffect(() => {
+    isSubmittingRef.current = false;
     if (task && selectedDate) {
       const existing = getLog(task.id, selectedDate);
       if (existing) {
@@ -72,22 +74,12 @@ export const QuickCheckInModal: React.FC = () => {
     }
   }, [task, selectedDate, getLog]);
 
-  if (!task) return null;
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!task) return;
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
-  const currentLog = selectedDate ? getLog(task.id, selectedDate) : undefined;
-
-  // Relative day description
-  const dayDiff = diffInDays(selectedDate, todayStr);
-  let relativeDayLabel = '';
-  if (dayDiff === 0) relativeDayLabel = '今天';
-  else if (dayDiff === 1) relativeDayLabel = '昨天';
-  else if (dayDiff === 2) relativeDayLabel = '前天';
-  else if (dayDiff > 2) relativeDayLabel = `${dayDiff} 天前`;
-  else if (dayDiff === -1) relativeDayLabel = '明天';
-  else relativeDayLabel = `${Math.abs(dayDiff)} 天后`;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
     const effectiveType = markAsCompleted ? 'completed' : progressType;
 
     addOrUpdateLog({
@@ -105,6 +97,46 @@ export const QuickCheckInModal: React.FC = () => {
       'success'
     );
     closeCheckInModal();
+  };
+
+  const handleSubmitRef = useRef(handleSubmit);
+  handleSubmitRef.current = handleSubmit;
+
+  useEffect(() => {
+    if (!task) return;
+
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmitRef.current();
+      }
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, [task]);
+
+  if (!task) return null;
+
+  const currentLog = selectedDate ? getLog(task.id, selectedDate) : undefined;
+
+  // Relative day description
+  const dayDiff = diffInDays(selectedDate, todayStr);
+  let relativeDayLabel = '';
+  if (dayDiff === 0) relativeDayLabel = '今天';
+  else if (dayDiff === 1) relativeDayLabel = '昨天';
+  else if (dayDiff === 2) relativeDayLabel = '前天';
+  else if (dayDiff > 2) relativeDayLabel = `${dayDiff} 天前`;
+  else if (dayDiff === -1) relativeDayLabel = '明天';
+  else relativeDayLabel = `${Math.abs(dayDiff)} 天后`;
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      handleSubmit();
+    }
   };
 
   const handleDelete = () => {
@@ -169,7 +201,7 @@ export const QuickCheckInModal: React.FC = () => {
           </div>
 
           {/* Body with scroll */}
-          <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+          <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="p-5 space-y-4 overflow-y-auto flex-1">
             {/* Date Navigator Bar */}
             <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-800 space-y-2">
               <div className="flex items-center justify-between">
@@ -391,6 +423,7 @@ export const QuickCheckInModal: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  title="按 Ctrl + Enter 快速提交"
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] rounded-xl shadow-xs transition-all cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />

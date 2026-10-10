@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Tag as TagIcon, Plus, Trash2, Check, Bookmark } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
@@ -13,6 +13,7 @@ export const TaskModal: React.FC = () => {
     deleteTask,
     allTags,
     requestConfirm,
+    confirmDialogState,
     showToast,
   } = useTaskContext();
   const { isOpen, task, defaultStatus } = taskModalData;
@@ -21,10 +22,13 @@ export const TaskModal: React.FC = () => {
   const [status, setStatus] = useState<TaskStatus>(defaultStatus || 'in_progress');
   const [tags, setTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const isSubmittingRef = useRef(false);
 
   const commonTagPresets = ['游戏', '书籍', '影视', '漫画', '音乐', 'Steam', 'PS5', 'Switch', '微信读书', '实体书', '动画'];
 
   useEffect(() => {
+    isSubmittingRef.current = false;
     if (task) {
       setTitle(task.title);
       setStatus(task.status);
@@ -36,6 +40,57 @@ export const TaskModal: React.FC = () => {
     }
     setNewTagInput('');
   }, [task, defaultStatus, isOpen]);
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!title.trim()) {
+      titleInputRef.current?.focus();
+      return;
+    }
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+
+    let finalTags = tags;
+    const trimmedTag = newTagInput.trim();
+    if (trimmedTag && !finalTags.includes(trimmedTag)) {
+      finalTags = [...finalTags, trimmedTag];
+    }
+
+    if (task) {
+      updateTask(task.id, {
+        title: title.trim(),
+        status,
+        tags: finalTags,
+      });
+    } else {
+      addTask({
+        title: title.trim(),
+        status,
+        tags: finalTags.length > 0 ? finalTags : ['未分类'],
+      });
+    }
+    closeTaskModal();
+  };
+
+  const handleSubmitRef = useRef(handleSubmit);
+  handleSubmitRef.current = handleSubmit;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+      if (confirmDialogState?.isOpen) return;
+      if (e.defaultPrevented) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmitRef.current();
+      }
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, [isOpen, confirmDialogState?.isOpen]);
 
   if (!isOpen) return null;
 
@@ -51,31 +106,22 @@ export const TaskModal: React.FC = () => {
     setTags(tags.filter((t) => t !== tagToRemove));
   };
 
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      handleSubmit();
+    }
+  };
+
   const handleKeyDownTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      return;
+    }
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       handleAddTag(newTagInput);
     }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    if (task) {
-      updateTask(task.id, {
-        title: title.trim(),
-        status,
-        tags,
-      });
-    } else {
-      addTask({
-        title: title.trim(),
-        status,
-        tags: tags.length > 0 ? tags : ['未分类'],
-      });
-    }
-    closeTaskModal();
   };
 
   const handleDelete = async () => {
@@ -121,13 +167,14 @@ export const TaskModal: React.FC = () => {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="p-6 space-y-5">
             {/* Title Input */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1.5">
                 任务标题 <span className="text-rose-500">*</span>
               </label>
               <input
+                ref={titleInputRef}
                 type="text"
                 required
                 placeholder="例如：《黑神话：悟空》、《设计心理学》、《塞尔达王国之泪》..."
@@ -285,7 +332,8 @@ export const TaskModal: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors"
+                  title="按 Ctrl + Enter 快速提交"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors cursor-pointer"
                 >
                   {task ? '保存更改' : '确认创建'}
                 </button>
