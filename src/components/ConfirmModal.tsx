@@ -9,11 +9,14 @@ export const ConfirmModal: React.FC = () => {
   const isOpen = !!confirmDialogState?.isOpen;
   const onConfirm = confirmDialogState?.onConfirm;
   const onCancel = confirmDialogState?.onCancel;
+  const hasAlt = !!confirmDialogState?.altText;
 
   const onConfirmRef = useRef(onConfirm);
   onConfirmRef.current = onConfirm;
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
+  const hasAltRef = useRef(hasAlt);
+  hasAltRef.current = hasAlt;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -22,7 +25,8 @@ export const ConfirmModal: React.FC = () => {
       if (e.key === 'Escape') {
         e.preventDefault();
         onCancelRef.current?.();
-      } else if (e.key === 'Enter' || ((e.ctrlKey || e.metaKey) && e.key === 'Enter')) {
+      } else if (e.key === 'Enter' && !hasAltRef.current) {
+        // With several choices there is no single "default" action, so Enter is ignored.
         e.preventDefault();
         onConfirmRef.current?.();
       }
@@ -40,6 +44,8 @@ export const ConfirmModal: React.FC = () => {
     confirmText = '确认',
     cancelText = '取消',
     variant = 'primary',
+    altText,
+    onAlt,
   } = confirmDialogState;
 
   const isDanger = variant === 'danger';
@@ -82,7 +88,7 @@ export const ConfirmModal: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="flex items-center justify-end flex-wrap gap-2.5 pt-2 border-t border-zinc-100 dark:border-zinc-800">
               <button
                 type="button"
                 onClick={onCancel}
@@ -90,6 +96,15 @@ export const ConfirmModal: React.FC = () => {
               >
                 {cancelText}
               </button>
+              {altText && onAlt && (
+                <button
+                  type="button"
+                  onClick={onAlt}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/70 border border-amber-200 dark:border-amber-800/60 transition-colors cursor-pointer"
+                >
+                  {altText}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onConfirm}

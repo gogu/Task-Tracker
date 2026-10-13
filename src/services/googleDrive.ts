@@ -11,6 +11,53 @@ export interface DriveSyncPayload {
   ganttGroupOrder?: string[];
 }
 
+/**
+ * Builds the on-disk / on-cloud sync payload. Shared by Google Drive,
+ * local folder sync and JSON export so every copy has the same structure.
+ */
+export function buildSyncPayload(data: {
+  tasks: TaskItem[];
+  logs: DailyLog[];
+  ganttGroupOrder?: string[];
+}): DriveSyncPayload {
+  return {
+    version: 1,
+    appName: '个人数字媒体与任务时序跟踪系统',
+    updatedAt: new Date().toISOString(),
+    tasks: data.tasks,
+    logs: data.logs,
+    ganttGroupOrder: data.ganttGroupOrder,
+  };
+}
+
+/**
+ * Fast deterministic hash for comparing task/log/order content
+ * to detect unsynced local modifications compared to cloud state.
+ */
+export function computeContentHash(data: {
+  tasks: TaskItem[];
+  logs: DailyLog[];
+  ganttGroupOrder?: string[];
+}): string {
+  const str = JSON.stringify({
+    tasks: data.tasks,
+    logs: data.logs,
+    ganttGroupOrder: data.ganttGroupOrder ?? [],
+  });
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c64e6d;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
 export interface DriveFileInfo {
   id: string;
   name: string;
@@ -66,14 +113,7 @@ export async function createDriveFile(
     description: '个人数字媒体与任务时序跟踪系统备份数据',
   };
 
-  const payload: DriveSyncPayload = {
-    version: 1,
-    appName: '个人数字媒体与任务时序跟踪系统',
-    updatedAt: new Date().toISOString(),
-    tasks: initialData.tasks,
-    logs: initialData.logs,
-    ganttGroupOrder: initialData.ganttGroupOrder,
-  };
+  const payload: DriveSyncPayload = buildSyncPayload(initialData);
 
   // Use multipart upload to create file with initial content
   const boundary = '-------314159265358979323846';
@@ -146,14 +186,7 @@ export async function updateDriveFileContent(
   fileId: string,
   data: { tasks: TaskItem[]; logs: DailyLog[]; ganttGroupOrder?: string[] }
 ): Promise<DriveFileInfo> {
-  const payload: DriveSyncPayload = {
-    version: 1,
-    appName: '个人数字媒体与任务时序跟踪系统',
-    updatedAt: new Date().toISOString(),
-    tasks: data.tasks,
-    logs: data.logs,
-    ganttGroupOrder: data.ganttGroupOrder,
-  };
+  const payload: DriveSyncPayload = buildSyncPayload(data);
 
   const url = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,modifiedTime`;
 

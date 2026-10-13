@@ -12,6 +12,7 @@ import {
   Clock,
   SlidersHorizontal,
   Cloud,
+  FolderSync,
 } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 import { getTodayString } from '../utils/date';
@@ -32,7 +33,11 @@ export const Header: React.FC = () => {
     importData,
     user,
     isSyncing,
+    syncStatus,
+    hasUnsyncedDriveChanges,
     setDriveSyncModalOpen,
+    localSync,
+    setLocalSyncModalOpen,
     showToast,
   } = useTaskContext();
 
@@ -146,24 +151,60 @@ export const Header: React.FC = () => {
           {/* Backup, Sync & Import/Export Menu */}
           <div className="flex items-center gap-1.5 border-l border-zinc-200 dark:border-zinc-800 pl-2.5">
             {/* Google Drive Cloud Sync Button */}
-            {user ? (
-              <button
-                type="button"
-                onClick={() => setDriveSyncModalOpen(true)}
-                title={`Google Drive 已连接 (${user.email || user.displayName || '已连接'}) - 点击管理云端同步`}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-100/80 transition-all cursor-pointer shadow-2xs"
-              >
-                <div className="relative">
-                  <Cloud
-                    className={`w-3.5 h-3.5 ${
-                      isSyncing ? 'animate-pulse text-blue-500' : 'text-emerald-600 dark:text-emerald-400'
-                    }`}
-                  />
-                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-zinc-900" />
-                </div>
-                <span className="hidden sm:inline">Drive 同步</span>
-              </button>
-            ) : (
+            {user ? (() => {
+              const dotClass =
+                syncStatus === 'error'
+                  ? 'bg-rose-500'
+                  : isSyncing
+                    ? 'bg-blue-500 animate-pulse'
+                    : hasUnsyncedDriveChanges
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500';
+
+              const title =
+                syncStatus === 'error'
+                  ? 'Google Drive 同步出错 - 点击查看详情'
+                  : isSyncing
+                    ? 'Google Drive 正在同步中...'
+                    : hasUnsyncedDriveChanges
+                      ? `Google Drive 已连接 (${user.email || user.displayName || '已连接'}) - 本地有修改，待同步至云端`
+                      : `Google Drive 已连接 (${user.email || user.displayName || '已连接'}) - 已是最新，点击管理云端同步`;
+
+              const btnClass =
+                syncStatus === 'error'
+                  ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100/80'
+                  : isSyncing
+                    ? 'border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
+                    : hasUnsyncedDriveChanges
+                      ? 'border-amber-300 dark:border-amber-700/80 bg-amber-50/90 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100/90'
+                      : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/80';
+
+              const iconClass =
+                syncStatus === 'error'
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : isSyncing
+                    ? 'animate-pulse text-blue-500'
+                    : hasUnsyncedDriveChanges
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-emerald-600 dark:text-emerald-400';
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => setDriveSyncModalOpen(true)}
+                  title={title}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer shadow-2xs ${btnClass}`}
+                >
+                  <div className="relative">
+                    <Cloud className={`w-3.5 h-3.5 ${iconClass}`} />
+                    <span
+                      className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-2 ring-white dark:ring-zinc-900 ${dotClass}`}
+                    />
+                  </div>
+                  <span className="hidden sm:inline">Drive 同步</span>
+                </button>
+              );
+            })() : (
               <button
                 type="button"
                 onClick={() => setDriveSyncModalOpen(true)}
@@ -174,6 +215,56 @@ export const Header: React.FC = () => {
                 <span className="hidden sm:inline">Drive 同步</span>
               </button>
             )}
+
+            {/* Local Folder Sync Button */}
+            {(() => {
+              const { supported, enabled, status } = localSync;
+              const dotClass =
+                status === 'error'
+                  ? 'bg-rose-500'
+                  : status === 'needs-permission'
+                    ? 'bg-amber-500'
+                    : status === 'syncing'
+                      ? 'bg-blue-500 animate-pulse'
+                      : 'bg-emerald-500';
+              const title = !supported
+                ? '当前浏览器不支持本地目录同步，请使用 Chrome / Edge'
+                : !enabled
+                  ? '开启本地目录实时同步'
+                  : status === 'needs-permission'
+                    ? `本地同步已暂停（${localSync.folderName ?? ''}）- 点击恢复授权`
+                    : status === 'error'
+                      ? `本地同步出错 - 点击查看详情`
+                      : `本地同步已开启（${localSync.folderName ?? ''}）- 点击管理`;
+              return (
+                <button
+                  type="button"
+                  onClick={() => setLocalSyncModalOpen(true)}
+                  title={title}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-2xs cursor-pointer ${
+                    !supported
+                      ? 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 text-zinc-400 dark:text-zinc-500'
+                      : enabled
+                        ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/80'
+                        : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  <div className="relative">
+                    <FolderSync
+                      className={`w-3.5 h-3.5 ${
+                        !supported ? 'text-zinc-400' : enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-500'
+                      }`}
+                    />
+                    {supported && enabled && (
+                      <span
+                        className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-2 ring-white dark:ring-zinc-900 ${dotClass}`}
+                      />
+                    )}
+                  </div>
+                  <span className="hidden sm:inline">本地同步</span>
+                </button>
+              );
+            })()}
 
             {/* Export JSON */}
             <button

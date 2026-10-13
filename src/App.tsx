@@ -11,6 +11,7 @@ import { GanttView } from './components/GanttView';
 import { QuickCheckInModal } from './components/QuickCheckInModal';
 import { TaskModal } from './components/TaskModal';
 import { DriveSyncModal } from './components/DriveSyncModal';
+import { LocalSyncModal } from './components/LocalSyncModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { Toast } from './components/Toast';
 import { TaskDetailDrawer } from './components/TaskDetailDrawer';
@@ -34,6 +35,7 @@ const AppContent: React.FC = () => {
       <QuickCheckInModal />
       <TaskModal />
       <DriveSyncModal />
+      <LocalSyncModal />
       <ConfirmModal />
       <TaskDetailDrawer />
       <Toast />

@@ -9,8 +9,12 @@ import {
   createDriveFile,
   readDriveFileContent,
   updateDriveFileContent,
+  buildSyncPayload,
+  computeContentHash,
+  DriveSyncPayload,
   DRIVE_DATA_FILENAME,
 } from '../services/googleDrive';
+import { useLocalSync, LocalSyncInfo, ChoiceResult } from '../hooks/useLocalSync';
 
 interface TaskContextType {
   tasks: TaskItem[];
@@ -86,6 +90,7 @@ interface TaskContextType {
   isSyncing: boolean;
   lastSyncTime: string | null;
   syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+  hasUnsyncedDriveChanges: boolean;
   syncErrorMessage: string | null;
   driveFileId: string | null;
   driveSyncModalOpen: boolean;
@@ -94,6 +99,16 @@ interface TaskContextType {
   logoutFromGoogle: () => Promise<void>;
   pushToDrive: (skipConfirm?: boolean) => Promise<boolean>;
   pullFromDrive: (skipConfirm?: boolean) => Promise<boolean>;
+
+  // Local folder sync
+  localSync: LocalSyncInfo;
+  localSyncModalOpen: boolean;
+  setLocalSyncModalOpen: (open: boolean) => void;
+  enableLocalSync: () => Promise<boolean>;
+  resumeLocalSync: () => Promise<boolean>;
+  disableLocalSync: () => Promise<void>;
+  writeLocalNow: () => Promise<boolean>;
+  pullFromLocalFile: () => Promise<boolean>;
 }
 
 export interface ConfirmDialogOptions {
@@ -104,15 +119,27 @@ export interface ConfirmDialogOptions {
   variant?: 'primary' | 'danger';
 }
 
+export interface ChoiceDialogOptions {
+  title: string;
+  message: string;
+  confirmText: string;
+  altText: string;
+  cancelText: string;
+}
+
 export interface ConfirmDialogState extends ConfirmDialogOptions {
   isOpen: boolean;
+  /** When set, a third button is rendered and Enter no longer confirms (only Esc/cancel is a safe default). */
+  altText?: string;
   onConfirm: () => void;
+  onAlt?: () => void;
   onCancel: () => void;
 }
 
 const STORAGE_KEY = 'media_task_tracker_data_v1';
 const DRIVE_FILE_ID_KEY = 'media_tracker_drive_file_id';
 const LAST_SYNC_KEY = 'media_tracker_drive_last_sync';
+const DRIVE_LAST_SYNC_HASH_KEY = 'media_tracker_drive_last_sync_hash';
 const GANTT_GROUP_ORDER_KEY = 'gantt_group_order_v1';
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
@@ -192,7 +219,20 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   const [driveFileId, setDriveFileId] = useState<string | null>(() => localStorage.getItem(DRIVE_FILE_ID_KEY));
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => localStorage.getItem(LAST_SYNC_KEY));
+  const [driveLastSyncHash, setDriveLastSyncHash] = useState<string | null>(() => localStorage.getItem(DRIVE_LAST_SYNC_HASH_KEY));
   const [driveSyncModalOpen, setDriveSyncModalOpen] = useState<boolean>(false);
+  const [localSyncModalOpen, setLocalSyncModalOpen] = useState<boolean>(false);
+
+  const currentDataHash = useMemo(
+    () => computeContentHash({ tasks, logs, ganttGroupOrder }),
+    [tasks, logs, ganttGroupOrder]
+  );
+
+  const hasUnsyncedDriveChanges = useMemo(() => {
+    if (!user) return false;
+    if (!driveLastSyncHash) return true;
+    return currentDataHash !== driveLastSyncHash;
+  }, [user, driveLastSyncHash, currentDataHash]);
 
   // In-App Confirm Dialog & Toast State
   const [confirmDialogState, setConfirmDialogState] = useState<ConfirmDialogState | null>(null);
@@ -217,6 +257,32 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     []
   );
 
+  // Three-way dialog: confirm / alt / cancel. Cancel (and Esc) is always the non-destructive exit.
+  const requestChoice = useCallback(
+    (options: ChoiceDialogOptions): Promise<ChoiceResult> => {
+      return new Promise<ChoiceResult>((resolve) => {
+        setConfirmDialogState({
+          ...options,
+          isOpen: true,
+          variant: 'primary',
+          onConfirm: () => {
+            setConfirmDialogState(null);
+            resolve('confirm');
+          },
+          onAlt: () => {
+            setConfirmDialogState(null);
+            resolve('alt');
+          },
+          onCancel: () => {
+            setConfirmDialogState(null);
+            resolve('cancel');
+          },
+        });
+      });
+    },
+    []
+  );
+
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -226,6 +292,35 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const hideToast = useCallback(() => {
     setToast(null);
   }, []);
+
+  // Local folder sync (one-way: app -> file, plus manual one-off read)
+  const applyPayload = useCallback(
+    (payload: DriveSyncPayload) => {
+      setTasks(payload.tasks);
+      setLogs(payload.logs);
+      if (Array.isArray(payload.ganttGroupOrder)) {
+        setGanttGroupOrder(payload.ganttGroupOrder);
+      }
+    },
+    [setGanttGroupOrder]
+  );
+
+  const {
+    localSync,
+    enableLocalSync,
+    resumeLocalSync,
+    disableLocalSync,
+    writeLocalNow,
+    pullFromLocalFile,
+  } = useLocalSync({
+    tasks,
+    logs,
+    ganttGroupOrder,
+    applyPayload,
+    requestConfirm,
+    requestChoice,
+    showToast,
+  });
 
   // Sync tasks & logs to localStorage
   useEffect(() => {
@@ -559,6 +654,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const nowIso = new Date().toISOString();
         setLastSyncTime(nowIso);
         localStorage.setItem(LAST_SYNC_KEY, nowIso);
+        const newHash = computeContentHash({ tasks, logs, ganttGroupOrder });
+        setDriveLastSyncHash(newHash);
+        localStorage.setItem(DRIVE_LAST_SYNC_HASH_KEY, newHash);
         setSyncStatus('success');
         showToast('已成功上传并同步至 Google Drive', 'success');
         return true;
@@ -632,6 +730,13 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const nowIso = new Date().toISOString();
         setLastSyncTime(nowIso);
         localStorage.setItem(LAST_SYNC_KEY, nowIso);
+        const newHash = computeContentHash({
+          tasks: payload.tasks,
+          logs: payload.logs,
+          ganttGroupOrder: payload.ganttGroupOrder,
+        });
+        setDriveLastSyncHash(newHash);
+        localStorage.setItem(DRIVE_LAST_SYNC_HASH_KEY, newHash);
         setSyncStatus('success');
         showToast('已成功从 Google Drive 拉取云端数据', 'success');
         return true;
@@ -717,6 +822,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
     setTokenExpired(true);
     setSyncStatus('idle');
+    setDriveLastSyncHash(null);
+    localStorage.removeItem(DRIVE_LAST_SYNC_HASH_KEY);
     setSyncErrorMessage(null);
     showToast('已断开 Google Drive 连接', 'info');
   };
@@ -775,7 +882,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const exportData = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify({ tasks, logs }, null, 2));
+    const payload = buildSyncPayload({ tasks, logs, ganttGroupOrder });
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
     downloadAnchor.setAttribute('download', `media-tracker-backup-${getTodayString()}.json`);
@@ -790,6 +898,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (Array.isArray(parsed.tasks) && Array.isArray(parsed.logs)) {
         setTasks(parsed.tasks);
         setLogs(parsed.logs);
+        if (Array.isArray(parsed.ganttGroupOrder)) {
+          setGanttGroupOrder(parsed.ganttGroupOrder);
+        }
         return true;
       }
     } catch (e) {
@@ -851,6 +962,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isSyncing,
         lastSyncTime,
         syncStatus,
+        hasUnsyncedDriveChanges,
         syncErrorMessage,
         driveFileId,
         driveSyncModalOpen,
@@ -859,6 +971,14 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         logoutFromGoogle,
         pushToDrive,
         pullFromDrive,
+        localSync,
+        localSyncModalOpen,
+        setLocalSyncModalOpen,
+        enableLocalSync,
+        resumeLocalSync,
+        disableLocalSync,
+        writeLocalNow,
+        pullFromLocalFile,
       }}
     >
       {children}

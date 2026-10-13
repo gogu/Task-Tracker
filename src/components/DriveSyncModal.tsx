@@ -27,6 +27,7 @@ export const DriveSyncModal: React.FC = () => {
     isSyncing,
     lastSyncTime,
     syncStatus,
+    hasUnsyncedDriveChanges,
     syncErrorMessage,
     driveFileId,
     driveSyncModalOpen,
@@ -277,6 +278,29 @@ export const DriveSyncModal: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Local vs Cloud Sync Status Banner */}
+                {hasUnsyncedDriveChanges ? (
+                  <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-200">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>本地数据有修改，云端文件待同步</span>
+                    </div>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200">
+                      待同步
+                    </span>
+                  </div>
+                ) : lastSyncTime ? (
+                  <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/50 text-xs text-emerald-700 dark:text-emerald-300">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>本地数据与 Google Drive 已保持最新</span>
+                    </div>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                      已同步
+                    </span>
+                  </div>
+                ) : null}
+
                 {/* Sync Action Buttons with Confirmation */}
                 <div className="grid grid-cols-2 gap-2.5 pt-1">
                   {/* Push to Drive */}
@@ -284,10 +308,14 @@ export const DriveSyncModal: React.FC = () => {
                     type="button"
                     disabled={isSyncing}
                     onClick={() => pushToDrive(false)}
-                    className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-medium text-xs shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                    className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl font-medium text-xs shadow-xs transition-all disabled:opacity-50 cursor-pointer ${
+                      hasUnsyncedDriveChanges
+                        ? 'bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white font-semibold'
+                        : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white'
+                    }`}
                   >
                     <CloudUpload className="w-4 h-4" />
-                    <span>上传覆盖至云端</span>
+                    <span>{hasUnsyncedDriveChanges ? '上传更新至云端' : '上传覆盖至云端'}</span>
                   </button>
 
                   {/* Pull from Drive */}
