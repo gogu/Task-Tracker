@@ -227,6 +227,7 @@ export const Header: React.FC = () => {
                     : status === 'syncing'
                       ? 'bg-blue-500 animate-pulse'
                       : 'bg-emerald-500';
+
               const title = !supported
                 ? '当前浏览器不支持本地目录同步，请使用 Chrome / Edge'
                 : !enabled
@@ -236,25 +237,40 @@ export const Header: React.FC = () => {
                     : status === 'error'
                       ? `本地同步出错 - 点击查看详情`
                       : `本地同步已开启（${localSync.folderName ?? ''}）- 点击管理`;
+
+              const btnClass = !supported
+                ? 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 text-zinc-400 dark:text-zinc-500'
+                : !enabled
+                  ? 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                  : status === 'error'
+                    ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100/80'
+                    : status === 'syncing'
+                      ? 'border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
+                      : status === 'needs-permission'
+                        ? 'border-amber-300 dark:border-amber-700/80 bg-amber-50/90 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100/90'
+                        : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/80';
+
+              const iconClass = !supported
+                ? 'text-zinc-400'
+                : !enabled
+                  ? 'text-blue-500'
+                  : status === 'error'
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : status === 'syncing'
+                      ? 'animate-pulse text-blue-500'
+                      : status === 'needs-permission'
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-emerald-600 dark:text-emerald-400';
+
               return (
                 <button
                   type="button"
                   onClick={() => setLocalSyncModalOpen(true)}
                   title={title}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-2xs cursor-pointer ${
-                    !supported
-                      ? 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 text-zinc-400 dark:text-zinc-500'
-                      : enabled
-                        ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/80'
-                        : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-2xs cursor-pointer ${btnClass}`}
                 >
                   <div className="relative">
-                    <FolderSync
-                      className={`w-3.5 h-3.5 ${
-                        !supported ? 'text-zinc-400' : enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-500'
-                      }`}
-                    />
+                    <FolderSync className={`w-3.5 h-3.5 ${iconClass}`} />
                     {supported && enabled && (
                       <span
                         className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-2 ring-white dark:ring-zinc-900 ${dotClass}`}

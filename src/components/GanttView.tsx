@@ -29,7 +29,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
       return {
         // 进行中：保持接近白色/深色背景，无彩色
         rowBg: 'bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/60',
-        stickyBg: 'bg-white/95 dark:bg-zinc-900/95',
+        stickyBg: 'bg-white/80 dark:bg-zinc-900/80',
         border: 'border-zinc-200/70 dark:border-zinc-800',
         badge: 'bg-blue-50 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60',
         statusLabel: '进行中',
@@ -38,7 +38,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
       return {
         // 完成：浅绿色，深色模式下极淡
         rowBg: 'bg-emerald-50/60 hover:bg-emerald-100/50 dark:bg-emerald-950/12 dark:hover:bg-emerald-950/20',
-        stickyBg: 'bg-emerald-50/95 dark:bg-emerald-950/30',
+        stickyBg: 'bg-emerald-50/85 dark:bg-emerald-950/75',
         border: 'border-emerald-200/60 dark:border-emerald-900/30',
         badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60',
         statusLabel: '已完成',
@@ -47,7 +47,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
       return {
         // 搁置：浅橙黄，深色模式下极淡
         rowBg: 'bg-amber-50/60 hover:bg-amber-100/50 dark:bg-amber-950/12 dark:hover:bg-amber-950/20',
-        stickyBg: 'bg-amber-50/95 dark:bg-amber-950/30',
+        stickyBg: 'bg-amber-50/85 dark:bg-amber-950/75',
         border: 'border-amber-200/60 dark:border-amber-900/30',
         badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60',
         statusLabel: '已搁置',
@@ -57,7 +57,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
       return {
         // 未开始：冷灰色，深色模式下微弱
         rowBg: 'bg-slate-100/60 hover:bg-slate-100/90 dark:bg-zinc-800/30 dark:hover:bg-zinc-800/50',
-        stickyBg: 'bg-slate-100/95 dark:bg-zinc-800/60',
+        stickyBg: 'bg-slate-100/85 dark:bg-zinc-800/80',
         border: 'border-slate-200/70 dark:border-zinc-700/50',
         badge: 'bg-slate-200/80 text-slate-700 dark:bg-zinc-700 dark:text-zinc-200 border border-slate-300/70 dark:border-zinc-600',
         statusLabel: '未开始',
@@ -483,9 +483,9 @@ export const GanttView: React.FC = () => {
       >
         <div className="min-w-fit">
           {/* Header Row (Sticky Left + Date Headers) */}
-          <div className="flex border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-zinc-50/95 dark:bg-zinc-900/95 z-20 backdrop-blur-xs">
+          <div className="flex border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-zinc-50/80 dark:bg-zinc-900/80 z-30 backdrop-blur-md">
             {/* Sticky Task Label Column Header */}
-            <div className="w-64 sm:w-72 shrink-0 p-3 sticky left-0 z-30 bg-zinc-50/95 dark:bg-zinc-900/95 border-r border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center justify-between">
+            <div className="w-64 sm:w-72 shrink-0 p-3 sticky left-0 z-40 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-md border-r border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center justify-between">
               <span>任务对象 (按主分类分组)</span>
               <span className="text-[10px] font-normal text-zinc-400">点击方格查看/修改详情</span>
             </div>
@@ -565,7 +565,7 @@ export const GanttView: React.FC = () => {
 
                 {/* Group Section Row */}
                 <div className="flex border-b border-zinc-200/70 dark:border-zinc-800/70 bg-zinc-100/60 dark:bg-zinc-800/40 cursor-grab active:cursor-grabbing">
-                  <div className="w-64 sm:w-72 shrink-0 py-1.5 px-2 sticky left-0 z-10 bg-zinc-100 dark:bg-zinc-800/70 border-r border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5">
+                  <div className="w-64 sm:w-72 shrink-0 py-1.5 px-2 sticky left-0 z-20 bg-zinc-100/80 dark:bg-zinc-800/80 backdrop-blur-md border-r border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5">
                     <GripVertical className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-600 shrink-0" />
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
                       <span className="w-2 h-2 rounded-full bg-blue-500" />
@@ -599,16 +599,16 @@ export const GanttView: React.FC = () => {
                     >
                       {/* Task insertion line — before */}
                       {isTaskDragOver && taskDropPos === 'before' && (
-                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-20 pointer-events-none" />
+                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 z-30 pointer-events-none" />
                       )}
                       {/* Task insertion line — after */}
                       {isTaskDragOver && taskDropPos === 'after' && (
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 z-20 pointer-events-none" />
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 z-30 pointer-events-none" />
                       )}
 
                       {/* Sticky Task Label Card */}
                       <div
-                        className={`w-64 sm:w-72 shrink-0 px-2 py-2 sticky left-0 z-10 ${statusStyle.stickyBg} border-r border-zinc-200 dark:border-zinc-800 flex items-center gap-1.5 min-w-0`}
+                        className={`w-64 sm:w-72 shrink-0 px-2 py-2 sticky left-0 z-20 ${statusStyle.stickyBg} backdrop-blur-md border-r border-zinc-200 dark:border-zinc-800 flex items-center gap-1.5 min-w-0`}
                       >
                         {/* Drag handle */}
                         <GripVertical className="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-700 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing" />
@@ -714,7 +714,7 @@ export const GanttView: React.FC = () => {
                                 />
                                 {/* ── Icon: centered in the full cell, only on trailing edge ── */}
                                 {!connectedRight && (
-                                  <span className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                  <span className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1]">
                                     {log.progressType === 'completed' ? (
                                       <CheckCircle2 className="w-3.5 h-3.5 stroke-2 text-white" />
                                     ) : (
@@ -775,7 +775,7 @@ export const GanttView: React.FC = () => {
             top: `${hoveredCell.y - 10}px`,
             transform: 'translate(-50%, -100%)',
             pointerEvents: 'none',
-            zIndex: 40,
+            zIndex: 50,
           }}
           className="bg-zinc-900/95 text-white dark:bg-zinc-800/95 dark:text-zinc-100 border border-zinc-700/80 rounded-xl px-3 py-2 shadow-xl text-xs max-w-xs animate-in fade-in zoom-in-95 duration-100"
         >
