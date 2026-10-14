@@ -100,7 +100,7 @@ export const KanbanView: React.FC = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
       {lanes.map(({ key, icon }) => {
         const config = TASK_STATUS_CONFIG[key];
         const laneTasks = filteredTasks.filter((t) => t.status === key);
@@ -118,8 +118,11 @@ export const KanbanView: React.FC = () => {
                 : 'border-zinc-200/80 dark:border-zinc-800'
             }`}
           >
-            {/* Lane Header */}
-            <div className="p-3 border-b border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between">
+            {/* Lane Header (Sticky on vertical scroll) */}
+            <div
+              style={{ top: 'var(--app-header-height, 140px)' }}
+              className="sticky z-20 rounded-t-2xl p-3 border-b border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-2xs"
+            >
               <div className="flex items-center gap-2">
                 {icon}
                 <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-200">
@@ -133,7 +136,7 @@ export const KanbanView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => openTaskModal(undefined, key)}
-                className="p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                className="p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
                 title={`在此泳道添加任务`}
               >
                 <Plus className="w-4 h-4" />

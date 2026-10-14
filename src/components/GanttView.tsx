@@ -304,9 +304,9 @@ export const GanttView: React.FC = () => {
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/90 dark:border-zinc-800 shadow-xs overflow-hidden flex flex-col min-h-[560px]">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/90 dark:border-zinc-800 shadow-xs overflow-hidden flex flex-col flex-1 min-h-0">
       {/* Top Toolbar */}
-      <div className="p-3 sm:px-5 border-b border-zinc-200/80 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 bg-zinc-50/70 dark:bg-zinc-900/70">
+      <div className="p-3 sm:px-5 border-b border-zinc-200/80 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 bg-zinc-50/70 dark:bg-zinc-900/70 shrink-0">
         {/* Left: View Title & Status Filter */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800 dark:text-zinc-200 mr-1">
@@ -432,7 +432,7 @@ export const GanttView: React.FC = () => {
       </div>
 
       {/* Sub Toolbar: Legends (Progress Square + Row Background) */}
-      <div className="px-3.5 sm:px-5 py-2 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-500">
+      <div className="px-3.5 sm:px-5 py-2 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-500 shrink-0">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-zinc-400 font-medium">打卡块:</span>
@@ -479,7 +479,7 @@ export const GanttView: React.FC = () => {
       {/* Main Gantt Grid Container */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-x-auto overflow-y-auto relative select-none"
+        className="flex-1 min-h-0 overflow-x-auto overflow-y-auto relative select-none"
       >
         <div className="min-w-fit">
           {/* Header Row (Sticky Left + Date Headers) */}

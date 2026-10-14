@@ -2,6 +2,7 @@
 
 /* ── Custom Scrollbar ───────────────────────────────────────────────────── */
 :root {
+  --app-header-height: 140px;
   --sb-thumb: #c1c5cc;
   --sb-thumb-hover: #9ca3af;
   --sb-track: transparent;

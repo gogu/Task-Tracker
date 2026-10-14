@@ -141,6 +141,7 @@ const DRIVE_FILE_ID_KEY = 'media_tracker_drive_file_id';
 const LAST_SYNC_KEY = 'media_tracker_drive_last_sync';
 const DRIVE_LAST_SYNC_HASH_KEY = 'media_tracker_drive_last_sync_hash';
 const GANTT_GROUP_ORDER_KEY = 'gantt_group_order_v1';
+const VIEW_MODE_KEY = 'media_task_tracker_view_mode';
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
 
@@ -175,7 +176,26 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return createInitialSampleData().logs;
   });
 
-  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_MODE_KEY);
+      if (saved === 'kanban' || saved === 'gantt') {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'kanban';
+  });
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // ignore
+    }
+  }, []);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
