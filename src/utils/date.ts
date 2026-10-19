@@ -122,3 +122,77 @@ export function formatHours(hours: number | undefined | null): string {
   const val = typeof hours === 'number' && !isNaN(hours) ? hours : 0;
   return `${val.toFixed(1)}h`;
 }
+
+/**
+ * Returns the natural week range (Monday to Sunday) containing dateStr
+ */
+export function getWeekRange(dateStr: string): { startDate: string; endDate: string; dates: string[] } {
+  const d = parseDate(dateStr);
+  const dayOfWeek = d.getDay(); // 0 (Sun) to 6 (Sat)
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const startDate = addDays(dateStr, diffToMonday);
+  const endDate = addDays(startDate, 6);
+  return {
+    startDate,
+    endDate,
+    dates: generateDateRange(startDate, endDate),
+  };
+}
+
+/**
+ * Returns the natural month range (1st to last day of month) containing dateStr
+ */
+export function getMonthRange(dateStr: string): {
+  startDate: string;
+  endDate: string;
+  dates: string[];
+  year: number;
+  month: number;
+} {
+  const [y, m] = dateStr.split('-').map(Number);
+  const firstDay = new Date(y, m - 1, 1, 12, 0, 0);
+  const lastDay = new Date(y, m, 0, 12, 0, 0);
+  const startDate = formatDate(firstDay);
+  const endDate = formatDate(lastDay);
+  return {
+    startDate,
+    endDate,
+    dates: generateDateRange(startDate, endDate),
+    year: y,
+    month: m,
+  };
+}
+
+/**
+ * Shifts a date string by N months, clamping the day to the target month's max days
+ */
+export function addMonths(dateStr: string, months: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetYear = y + Math.floor((m - 1 + months) / 12);
+  const targetMonthIndex = (((m - 1 + months) % 12) + 12) % 12;
+  const maxDay = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+  const clampedDay = Math.min(d, maxDay);
+  return formatDate(new Date(targetYear, targetMonthIndex, clampedDay, 12, 0, 0));
+}
+
+/**
+ * Formats a human-readable period label in Chinese for day, week, or month
+ */
+export function formatPeriodLabel(period: 'day' | 'week' | 'month', pivotDate: string): string {
+  if (period === 'day') {
+    const [y, m, d] = pivotDate.split('-').map(Number);
+    return `${y}年${m}月${d}日 ${getWeekdayChinese(pivotDate)}`;
+  }
+  if (period === 'week') {
+    const { startDate, endDate } = getWeekRange(pivotDate);
+    const [sy, sm, sd] = startDate.split('-').map(Number);
+    const [ey, em, ed] = endDate.split('-').map(Number);
+    if (sy === ey) {
+      return `${sy}年${sm}月${sd}日 - ${em}月${ed}日`;
+    }
+    return `${sy}年${sm}月${sd}日 - ${ey}年${em}月${ed}日`;
+  }
+  const [y, m] = pivotDate.split('-').map(Number);
+  return `${y}年${m}月`;
+}
+

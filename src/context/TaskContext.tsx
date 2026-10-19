@@ -181,7 +181,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     try {
       const saved = localStorage.getItem(VIEW_MODE_KEY);
-      if (saved === 'kanban' || saved === 'gantt') {
+      if (saved === 'kanban' || saved === 'gantt' || saved === 'stats') {
         return saved;
       }
     } catch {

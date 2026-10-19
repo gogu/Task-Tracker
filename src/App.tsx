@@ -8,6 +8,7 @@ import { TaskProvider, useTaskContext } from './context/TaskContext';
 import { Header } from './components/Header';
 import { KanbanView } from './components/KanbanView';
 import { GanttView } from './components/GanttView';
+import { StatsView } from './components/StatsView';
 import { QuickCheckInModal } from './components/QuickCheckInModal';
 import { TaskModal } from './components/TaskModal';
 import { DriveSyncModal } from './components/DriveSyncModal';
@@ -86,7 +87,13 @@ const AppContent: React.FC = () => {
 
         {/* Dynamic View Body */}
         <main className={`min-w-0 ${isGantt ? 'flex-1 min-h-0 flex flex-col' : 'flex-1'}`}>
-          {isGantt ? <GanttView /> : <KanbanView />}
+          {viewMode === 'gantt' ? (
+            <GanttView />
+          ) : viewMode === 'stats' ? (
+            <StatsView />
+          ) : (
+            <KanbanView />
+          )}
         </main>
       </div>
 

@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import {
   Kanban,
   CalendarDays,
+  BarChart3,
   Plus,
   Search,
   Tag,
@@ -85,7 +86,7 @@ export const Header: React.FC = () => {
                 时序追踪
               </h1>
               <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800">
-                看板 × 时序甘特
+                看板 × 甘特 × 统计
               </span>
             </div>
             {/* Quick Micro-Stats */}
@@ -110,12 +111,12 @@ export const Header: React.FC = () => {
 
         {/* View Mode Toggle & Primary Action */}
         <div className="flex items-center flex-wrap gap-2.5">
-          {/* View Mode Switcher (Kanban / Gantt) */}
+          {/* View Mode Switcher (Kanban / Gantt / Stats) */}
           <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200/80 dark:border-zinc-700/60">
             <button
               type="button"
               onClick={() => setViewMode('kanban')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 viewMode === 'kanban'
                   ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-2xs'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
@@ -127,7 +128,7 @@ export const Header: React.FC = () => {
             <button
               type="button"
               onClick={() => setViewMode('gantt')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 viewMode === 'gantt'
                   ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-2xs'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
@@ -135,6 +136,18 @@ export const Header: React.FC = () => {
             >
               <CalendarDays className="w-3.5 h-3.5" />
               <span>时序甘特</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('stats')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                viewMode === 'stats'
+                  ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>统计视图</span>
             </button>
           </div>
 

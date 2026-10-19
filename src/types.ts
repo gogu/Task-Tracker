@@ -119,5 +119,6 @@ export const PROGRESS_TYPE_CONFIG: Record<ProgressType, ProgressConfig> = {
   },
 };
 
-export type ViewMode = 'kanban' | 'gantt';
+export type ViewMode = 'kanban' | 'gantt' | 'stats';
 export type GanttTimeRange = 'week' | 'month' | 'all';
+export type StatsPeriod = 'day' | 'week' | 'month';
