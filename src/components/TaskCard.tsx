@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { MoreVertical, Edit2, Trash2, Flame } from 'lucide-react';
+import { MoreVertical, Edit2, Trash2, Flame, Clock } from 'lucide-react';
 import { TaskItem, TASK_STATUS_CONFIG } from '../types';
 import { useTaskContext } from '../context/TaskContext';
-import { getRelativeTimeString } from '../utils/date';
+import { getRelativeTimeString, formatHours } from '../utils/date';
 
 interface TaskCardProps {
   task: TaskItem;
@@ -18,6 +18,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragOve
     moveTaskStatus,
     getLatestLogForTask,
     getLogsForTask,
+    getTaskTotalHours,
     selectedTag,
     setSelectedTag,
     requestConfirm,
@@ -31,6 +32,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragOve
   const progressCount = allLogs.filter(
     (l) => l.progressType === 'progress' || l.progressType === 'completed'
   ).length;
+  const totalHours = getTaskTotalHours(task.id);
 
   const statusConfig = TASK_STATUS_CONFIG[task.status];
 
@@ -44,7 +46,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragOve
     >
       <div className="px-3 py-2 flex flex-col gap-1">
 
-        {/* Row 1: status dot · title · flame count · menu */}
+        {/* Row 1: status dot · title · flame count · hours · menu */}
         <div className="flex items-center gap-2 min-w-0">
           {/* Status dot */}
           <div className={`w-2 h-2 rounded-full shrink-0 ${statusConfig.dotColor}`} />
@@ -71,7 +73,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragOve
             </span>
           )}
 
-          {/* ··· menu — only visible on hover */}
+          {/* Hours badge */}
+          {totalHours > 0 && (
+            <span
+              className="flex items-center gap-0.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400 shrink-0"
+              title={`累计投入 ${formatHours(totalHours)}`}
+            >
+              <Clock className="w-3 h-3 text-blue-500" />
+              {formatHours(totalHours)}
+            </span>
+          )}
+
+          {/* ··· menu button */}
           <div className="relative shrink-0">
             <button
               type="button"
@@ -79,7 +92,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragOve
                 e.stopPropagation();
                 setMenuOpen(!menuOpen);
               }}
-              className="p-0.5 text-zinc-300 dark:text-zinc-600 hover:text-zinc-600 dark:hover:text-zinc-300 rounded transition-colors opacity-0 group-hover:opacity-100"
+              className="p-0.5 text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
+              title="操作菜单"
             >
               <MoreVertical className="w-3.5 h-3.5" />
             </button>

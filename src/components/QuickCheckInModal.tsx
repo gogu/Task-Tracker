@@ -20,6 +20,7 @@ import {
   addDays,
   getWeekdayChinese,
   diffInDays,
+  formatHours,
 } from '../utils/date';
 
 export const QuickCheckInModal: React.FC = () => {
@@ -30,6 +31,7 @@ export const QuickCheckInModal: React.FC = () => {
     addOrUpdateLog,
     deleteLog,
     getLog,
+    getTaskTotalHours,
     showToast,
   } = useTaskContext();
 
@@ -39,6 +41,7 @@ export const QuickCheckInModal: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(initialDate);
   const [progressType, setProgressType] = useState<ProgressType>('progress');
   const [note, setNote] = useState<string>('');
+  const [hours, setHours] = useState<string>('');
   const [markAsCompleted, setMarkAsCompleted] = useState<boolean>(false);
   const [existingLogId, setExistingLogId] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
@@ -63,11 +66,17 @@ export const QuickCheckInModal: React.FC = () => {
       if (existing) {
         setProgressType(existing.progressType);
         setNote(existing.note || '');
+        setHours(
+          typeof existing.hours === 'number' && !isNaN(existing.hours)
+            ? String(existing.hours)
+            : ''
+        );
         setExistingLogId(existing.id);
         setMarkAsCompleted(existing.progressType === 'completed' || task.status === 'done');
       } else {
         setProgressType('progress');
         setNote('');
+        setHours('');
         setExistingLogId(null);
         setMarkAsCompleted(false);
       }
@@ -81,11 +90,13 @@ export const QuickCheckInModal: React.FC = () => {
     isSubmittingRef.current = true;
 
     const effectiveType = markAsCompleted ? 'completed' : progressType;
+    const parsedHours = hours.trim() !== '' ? parseFloat(hours) : undefined;
 
     addOrUpdateLog({
       taskId: task.id,
       date: selectedDate,
       progressType: effectiveType,
+      hours: parsedHours !== undefined && !isNaN(parsedHours) ? parsedHours : undefined,
       note: note.trim(),
       markTaskAsCompleted: markAsCompleted || effectiveType === 'completed',
     });
@@ -277,7 +288,7 @@ export const QuickCheckInModal: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
                       PROGRESS_TYPE_CONFIG[currentLog.progressType].lightBg
@@ -290,6 +301,17 @@ export const QuickCheckInModal: React.FC = () => {
                     />
                     <span>{PROGRESS_TYPE_CONFIG[currentLog.progressType].label}</span>
                   </span>
+                  {typeof currentLog.hours === 'number' && currentLog.hours > 0 && (
+                    <span className="inline-flex items-center gap-1 text-xs text-sky-700 dark:text-sky-300 font-semibold bg-sky-50 dark:bg-sky-950/60 px-2.5 py-1 rounded-lg border border-sky-200 dark:border-sky-800">
+                      <Clock className="w-3.5 h-3.5 text-sky-500" />
+                      <span>投入 {formatHours(currentLog.hours)}</span>
+                    </span>
+                  )}
+                  {getTaskTotalHours(task.id, selectedDate) > 0 && (
+                    <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800/80 px-2 py-1 rounded-lg">
+                      <span>截至该日累计: {formatHours(getTaskTotalHours(task.id, selectedDate))}</span>
+                    </span>
+                  )}
                   {currentLog.progressType === 'completed' && (
                     <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
                       <CheckCircle2 className="w-3.5 h-3.5" />
@@ -356,6 +378,59 @@ export const QuickCheckInModal: React.FC = () => {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Hours input field */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  本次投入时长 (单位：h)
+                </label>
+                {task && (
+                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    截至该日累计：
+                    <span className="font-semibold text-blue-600 dark:text-blue-400 ml-1">
+                      {formatHours(getTaskTotalHours(task.id, selectedDate))}
+                    </span>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="24"
+                    placeholder="例如 1.5"
+                    value={hours}
+                    onChange={(e) => setHours(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs sm:text-sm font-mono bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 pr-8"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400 dark:text-zinc-500 select-none">
+                    h
+                  </span>
+                </div>
+
+                {/* Quick hour presets */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {[0.5, 1.0, 1.5, 2.0, 3.0].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setHours(String(preset))}
+                      className={`px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
+                        hours === String(preset)
+                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800 font-semibold shadow-xs'
+                          : 'bg-zinc-50 dark:bg-zinc-800/60 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700/60'
+                      }`}
+                    >
+                      {preset.toFixed(1)}h
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

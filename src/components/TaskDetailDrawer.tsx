@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 import { TASK_STATUS_CONFIG, PROGRESS_TYPE_CONFIG } from '../types';
-import { getWeekdayChinese, diffInDays, getTodayString } from '../utils/date';
+import { getWeekdayChinese, diffInDays, getTodayString, formatHours } from '../utils/date';
 
 export const TaskDetailDrawer: React.FC = () => {
   const {
@@ -20,6 +20,7 @@ export const TaskDetailDrawer: React.FC = () => {
     closeTaskDetail,
     tasks,
     getLogsForTask,
+    getTaskTotalHours,
     openCheckInModal,
     openTaskModal,
   } = useTaskContext();
@@ -41,6 +42,11 @@ export const TaskDetailDrawer: React.FC = () => {
     () => logs.filter((l) => l.progressType === 'progress' || l.progressType === 'completed').length,
     [logs]
   );
+
+  const totalHours = useMemo(() => {
+    if (!task) return 0;
+    return getTaskTotalHours(task.id);
+  }, [task, getTaskTotalHours]);
 
   const durationDays = useMemo(() => {
     if (!task?.startDate) return null;
@@ -136,6 +142,12 @@ export const TaskDetailDrawer: React.FC = () => {
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 shrink-0" />
                     <span>跨度 {durationDays} 天</span>
+                  </span>
+                )}
+                {totalHours > 0 && (
+                  <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400 font-medium">
+                    <Clock className="w-3.5 h-3.5 shrink-0 text-sky-500" />
+                    <span>累计 {formatHours(totalHours)}</span>
                   </span>
                 )}
                 {progressCount > 0 && (
@@ -239,6 +251,19 @@ export const TaskDetailDrawer: React.FC = () => {
                               >
                                 {config.label}
                               </span>
+                              {typeof log.hours === 'number' && log.hours > 0 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800">
+                                  投入 {formatHours(log.hours)}
+                                </span>
+                              )}
+                              {getTaskTotalHours(task.id, log.date) > 0 && (
+                                <span
+                                  className="text-[10px] px-1.5 py-0.5 rounded-md font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/60 dark:border-zinc-700/60"
+                                  title={`截至 ${log.date} 累计投入 ${formatHours(getTaskTotalHours(task.id, log.date))}`}
+                                >
+                                  截至当日累计 {formatHours(getTaskTotalHours(task.id, log.date))}
+                                </span>
+                              )}
                             </div>
 
                             {/* Note block — only shown when note exists */}

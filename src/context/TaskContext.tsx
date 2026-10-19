@@ -41,6 +41,7 @@ interface TaskContextType {
     taskId: string;
     date: string;
     progressType: ProgressType;
+    hours?: number;
     note?: string;
     markTaskAsCompleted?: boolean;
   }) => DailyLog;
@@ -48,6 +49,7 @@ interface TaskContextType {
   getLogsForTask: (taskId: string) => DailyLog[];
   getLog: (taskId: string, date: string) => DailyLog | undefined;
   getLatestLogForTask: (taskId: string) => DailyLog | undefined;
+  getTaskTotalHours: (taskId: string, upToDate?: string) => number;
 
   // Active Modals Control
   checkInModalTask: TaskItem | null;
@@ -547,15 +549,24 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     date,
     progressType,
     note,
+    hours,
     markTaskAsCompleted,
   }: {
     taskId: string;
     date: string;
     progressType: ProgressType;
     note?: string;
+    hours?: number;
     markTaskAsCompleted?: boolean;
   }): DailyLog => {
     let savedLog: DailyLog;
+
+    const parsedHours =
+      typeof hours === 'number' && !isNaN(hours) && hours >= 0
+        ? Math.round(hours * 10) / 10
+        : undefined;
+
+    let updatedLogsForTask: DailyLog[] = [];
 
     setLogs((prev) => {
       const existingIndex = prev.findIndex((l) => l.taskId === taskId && l.date === date);
@@ -563,10 +574,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         savedLog = {
           ...prev[existingIndex],
           progressType,
+          hours: parsedHours,
           note: note?.trim() || undefined,
         };
         const next = [...prev];
         next[existingIndex] = savedLog;
+        updatedLogsForTask = next.filter((l) => l.taskId === taskId);
         return next;
       } else {
         savedLog = {
@@ -574,10 +587,13 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           taskId,
           date,
           progressType,
+          hours: parsedHours,
           note: note?.trim() || undefined,
           createdAt: new Date().toISOString(),
         };
-        return [...prev, savedLog];
+        const next = [...prev, savedLog];
+        updatedLogsForTask = next.filter((l) => l.taskId === taskId);
+        return next;
       }
     });
 
@@ -589,12 +605,20 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const newStatus = isMarkDone ? 'done' : task.status === 'backlog' ? 'in_progress' : task.status;
         const newStartDate = task.startDate || date;
         const newCompletedDate = isMarkDone ? (task.completedDate || date) : task.completedDate;
+        const totalHours =
+          Math.round(
+            updatedLogsForTask.reduce(
+              (sum, l) => sum + (typeof l.hours === 'number' && !isNaN(l.hours) ? l.hours : 0),
+              0
+            ) * 10
+          ) / 10;
 
         return {
           ...task,
           status: newStatus,
           startDate: newStartDate,
           completedDate: newCompletedDate,
+          totalHours,
           updatedAt: new Date().toISOString(),
         };
       })
@@ -604,7 +628,28 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteLog = (id: string) => {
+    const target = logs.find((l) => l.id === id);
     setLogs((prev) => prev.filter((l) => l.id !== id));
+    if (target) {
+      setTasks((prev) =>
+        prev.map((task) => {
+          if (task.id !== target.taskId) return task;
+          const remainingLogs = logs.filter((l) => l.taskId === target.taskId && l.id !== id);
+          const totalHours =
+            Math.round(
+              remainingLogs.reduce(
+                (sum, l) => sum + (typeof l.hours === 'number' && !isNaN(l.hours) ? l.hours : 0),
+                0
+              ) * 10
+            ) / 10;
+          return {
+            ...task,
+            totalHours,
+            updatedAt: new Date().toISOString(),
+          };
+        })
+      );
+    }
   };
 
   const getLogsForTask = (taskId: string): DailyLog[] => {
@@ -621,6 +666,28 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const taskLogs = getLogsForTask(taskId);
     return taskLogs[0];
   };
+
+  const getTaskTotalHours = useCallback(
+    (taskId: string, upToDate?: string): number => {
+      let taskLogs = logs.filter((l) => l.taskId === taskId);
+      if (upToDate) {
+        taskLogs = taskLogs.filter((l) => l.date <= upToDate);
+      }
+      const sumHours = taskLogs.reduce(
+        (sum, l) => sum + (typeof l.hours === 'number' && !isNaN(l.hours) ? l.hours : 0),
+        0
+      );
+      if (sumHours > 0 || upToDate) {
+        return Math.round(sumHours * 10) / 10;
+      }
+      const task = tasks.find((t) => t.id === taskId);
+      if (typeof task?.totalHours === 'number' && !isNaN(task.totalHours) && task.totalHours > 0) {
+        return Math.round(task.totalHours * 10) / 10;
+      }
+      return 0;
+    },
+    [tasks, logs]
+  );
 
   // Google Drive Operations with explicit user confirmation for destructive actions
   const pushToDrive = useCallback(
@@ -953,6 +1020,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         getLogsForTask,
         getLog,
         getLatestLogForTask,
+        getTaskTotalHours,
         checkInModalTask,
         checkInModalDate,
         openCheckInModal,

@@ -20,6 +20,7 @@ import {
   getWeekdayChinese,
   isWeekend,
   addDays,
+  formatHours,
 } from '../utils/date';
 
 // Visual configuration for row background by task status
@@ -71,6 +72,7 @@ export const GanttView: React.FC = () => {
     openCheckInModal, openTaskDetail,
     reorderTasksGlobal,
     ganttGroupOrder, setGanttGroupOrder,
+    getTaskTotalHours,
   } = useTaskContext();
   const [timeRange, setTimeRange] = useState<GanttTimeRange>('month');
   const [pivotDate, setPivotDate] = useState<string>(getTodayString());
@@ -788,19 +790,26 @@ export const GanttView: React.FC = () => {
 
           {hoveredCell.log ? (
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    hoveredCell.log.progressType === 'progress'
-                      ? 'bg-blue-400'
-                      : hoveredCell.log.progressType === 'rest'
-                      ? 'bg-amber-400'
-                      : 'bg-emerald-400'
-                  }`}
-                />
-                <span className="text-[11px] font-medium">
-                  {PROGRESS_TYPE_CONFIG[hoveredCell.log.progressType].label}
-                </span>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      hoveredCell.log.progressType === 'progress'
+                        ? 'bg-blue-400'
+                        : hoveredCell.log.progressType === 'rest'
+                        ? 'bg-amber-400'
+                        : 'bg-emerald-400'
+                    }`}
+                  />
+                  <span className="text-[11px] font-medium">
+                    {PROGRESS_TYPE_CONFIG[hoveredCell.log.progressType].label}
+                  </span>
+                </div>
+                {typeof hoveredCell.log.hours === 'number' && hoveredCell.log.hours > 0 && (
+                  <span className="text-[10px] font-semibold text-sky-300 bg-sky-950/80 px-1.5 py-0.5 rounded border border-sky-800/80">
+                    投入 {formatHours(hoveredCell.log.hours)}
+                  </span>
+                )}
               </div>
               {hoveredCell.log.note ? (
                 <div className="text-[11px] text-zinc-300 bg-black/30 p-1.5 rounded mt-1 line-clamp-3 italic">
@@ -809,9 +818,27 @@ export const GanttView: React.FC = () => {
               ) : (
                 <div className="text-[10px] text-zinc-400">无附加日志笔记</div>
               )}
+              {getTaskTotalHours(hoveredCell.task.id, hoveredCell.date) > 0 && (
+                <div className="text-[10px] text-zinc-400 mt-1.5 pt-1 border-t border-zinc-700/50 flex justify-between">
+                  <span>截至当日累计:</span>
+                  <span className="font-semibold text-sky-400">
+                    {formatHours(getTaskTotalHours(hoveredCell.task.id, hoveredCell.date))}
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="text-[11px] text-zinc-400 italic">本日暂无打卡（点击即可快速打卡）</div>
+            <div>
+              <div className="text-[11px] text-zinc-400 italic">本日暂无打卡（点击即可快速打卡）</div>
+              {getTaskTotalHours(hoveredCell.task.id, hoveredCell.date) > 0 && (
+                <div className="text-[10px] text-zinc-400 mt-1.5 pt-1 border-t border-zinc-700/50 flex justify-between">
+                  <span>截至当日累计:</span>
+                  <span className="font-semibold text-sky-400">
+                    {formatHours(getTaskTotalHours(hoveredCell.task.id, hoveredCell.date))}
+                  </span>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

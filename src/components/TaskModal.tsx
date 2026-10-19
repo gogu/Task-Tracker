@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Tag as TagIcon, Plus, Trash2, Check, Bookmark } from 'lucide-react';
+import { X, Tag as TagIcon, Plus, Trash2, Check, Bookmark, Clock } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 import { TaskStatus, TASK_STATUS_CONFIG } from '../types';
+import { formatHours } from '../utils/date';
 
 export const TaskModal: React.FC = () => {
   const {
@@ -12,6 +13,7 @@ export const TaskModal: React.FC = () => {
     updateTask,
     deleteTask,
     allTags,
+    getTaskTotalHours,
     requestConfirm,
     confirmDialogState,
     showToast,
@@ -155,9 +157,17 @@ export const TaskModal: React.FC = () => {
         >
           {/* Modal Header */}
           <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-900/50">
-            <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100 font-bold text-base">
-              <Bookmark className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              <span>{task ? '编辑任务条目' : '新建跟踪任务'}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100 font-bold text-base">
+                <Bookmark className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <span>{task ? '编辑任务条目' : '新建跟踪任务'}</span>
+              </div>
+              {task && getTaskTotalHours(task.id) > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-900/60">
+                  <Clock className="w-3 h-3 text-blue-500" />
+                  <span>累计 {formatHours(getTaskTotalHours(task.id))}</span>
+                </span>
+              )}
             </div>
             <button
               onClick={closeTaskModal}

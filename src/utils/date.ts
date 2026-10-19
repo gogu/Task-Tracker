@@ -114,3 +114,11 @@ export function getGanttDateWindow(
     dates: generateDateRange(start, effectiveEnd),
   };
 }
+
+/**
+ * Formats hours with one decimal place and 'h' unit, e.g. 1.5 -> '1.5h', 0 -> '0.0h'
+ */
+export function formatHours(hours: number | undefined | null): string {
+  const val = typeof hours === 'number' && !isNaN(hours) ? hours : 0;
+  return `${val.toFixed(1)}h`;
+}

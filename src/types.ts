@@ -10,6 +10,7 @@ export interface TaskItem {
   order?: number;                // 泳道内排序权重，越小越靠前
   startDate: string | null;      // 首次产生有效打卡或进入“进行中”的日期
   completedDate: string | null;  // 进入“已完成”状态的日期
+  totalHours?: number;           // 累计时间（单位：小时，显示一位小数）
   createdAt: string;
   updatedAt: string;
 }
@@ -19,6 +20,7 @@ export interface DailyLog {
   taskId: string;
   date: string;                  // YYYY-MM-DD
   progressType: ProgressType;    // 无实质进展/休息 | 有实质推进 | 通关/全量完成
+  hours?: number;                // 本次打卡投入时间（小时，支持一位小数，如 1.5）
   note?: string;                 // 日志备注（如“通关第3章”）
   createdAt: string;
 }
