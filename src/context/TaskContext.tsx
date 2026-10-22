@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback, useRef } from 'react';
 import { User } from 'firebase/auth';
-import { TaskItem, DailyLog, TaskStatus, ProgressType, ViewMode } from '../types';
+import { TaskItem, DailyLog, TaskStatus, ProgressType, ViewMode, TASK_STATUS_CONFIG } from '../types';
 import { createInitialSampleData } from '../data/initialData';
 import { getTodayString } from '../utils/date';
 import { initAuth, googleSignIn, logout, getAccessToken, getStoredUser, isTokenExpired, AuthUser } from '../services/auth';
@@ -74,6 +74,14 @@ interface TaskContextType {
   exportData: () => void;
   importData: (jsonStr: string) => boolean;
 
+  // Undo / Redo History
+  canUndo: boolean;
+  canRedo: boolean;
+  lastUndoDescription: string | null;
+  lastRedoDescription: string | null;
+  undo: () => void;
+  redo: () => void;
+
   // Gantt group order (synced to Drive)
   ganttGroupOrder: string[];
   setGanttGroupOrder: (order: string[]) => void;
@@ -81,8 +89,8 @@ interface TaskContextType {
   // In-App Confirm Dialog & Toast
   confirmDialogState: ConfirmDialogState | null;
   requestConfirm: (options: ConfirmDialogOptions) => Promise<boolean>;
-  toast: { message: string; type: 'success' | 'error' | 'info' } | null;
-  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  toast: { message: string; type: 'success' | 'error' | 'info'; allowUndo?: boolean } | null;
+  showToast: (message: string, type?: 'success' | 'error' | 'info', allowUndo?: boolean) => void;
   hideToast: () => void;
 
   // Google Drive Integration
@@ -144,6 +152,15 @@ const LAST_SYNC_KEY = 'media_tracker_drive_last_sync';
 const DRIVE_LAST_SYNC_HASH_KEY = 'media_tracker_drive_last_sync_hash';
 const GANTT_GROUP_ORDER_KEY = 'gantt_group_order_v1';
 const VIEW_MODE_KEY = 'media_task_tracker_view_mode';
+const HISTORY_SESSION_KEY = 'media_task_tracker_history_session_v1';
+const MAX_HISTORY_STEPS = 30;
+
+interface HistorySnapshot {
+  tasks: TaskItem[];
+  logs: DailyLog[];
+  ganttGroupOrder: string[];
+  description: string;
+}
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
 
@@ -208,7 +225,73 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch { return []; }
   });
 
-  const setGanttGroupOrder = useCallback((order: string[]) => {
+  // Undo / Redo stacks (persisted in sessionStorage for current browser tab session)
+  const [undoStack, setUndoStack] = useState<HistorySnapshot[]>(() => {
+    try {
+      const saved = sessionStorage.getItem(HISTORY_SESSION_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.undoStack)) {
+          return parsed.undoStack.slice(-MAX_HISTORY_STEPS);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+
+  const [redoStack, setRedoStack] = useState<HistorySnapshot[]>(() => {
+    try {
+      const saved = sessionStorage.getItem(HISTORY_SESSION_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.redoStack)) {
+          return parsed.redoStack.slice(-MAX_HISTORY_STEPS);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        HISTORY_SESSION_KEY,
+        JSON.stringify({ undoStack, redoStack })
+      );
+    } catch (e) {
+      console.warn('Failed to save history to sessionStorage:', e);
+    }
+  }, [undoStack, redoStack]);
+
+  const latestStateRef = useRef({ tasks, logs, ganttGroupOrder });
+  latestStateRef.current = { tasks, logs, ganttGroupOrder };
+
+  const pushHistory = useCallback((description: string) => {
+    const current = latestStateRef.current;
+    const snapshot: HistorySnapshot = {
+      tasks: current.tasks.map((t) => ({ ...t, tags: [...t.tags] })),
+      logs: current.logs.map((l) => ({ ...l })),
+      ganttGroupOrder: [...current.ganttGroupOrder],
+      description,
+    };
+    setUndoStack((prev) => [...prev.slice(-(MAX_HISTORY_STEPS - 1)), snapshot]);
+    setRedoStack([]);
+  }, []);
+
+  const setGanttGroupOrder = useCallback(
+    (order: string[]) => {
+      pushHistory('调整甘特分组顺序');
+      setGanttGroupOrderState(order);
+      localStorage.setItem(GANTT_GROUP_ORDER_KEY, JSON.stringify(order));
+    },
+    [pushHistory]
+  );
+
+  const setGanttGroupOrderSilent = useCallback((order: string[]) => {
     setGanttGroupOrderState(order);
     localStorage.setItem(GANTT_GROUP_ORDER_KEY, JSON.stringify(order));
   }, []);
@@ -305,15 +388,119 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     []
   );
 
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info'; allowUndo?: boolean } | null>(null);
 
-  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setToast({ message, type });
-  }, []);
+  const showToast = useCallback(
+    (message: string, type: 'success' | 'error' | 'info' = 'info', allowUndo: boolean = false) => {
+      setToast({ message, type, allowUndo });
+    },
+    []
+  );
 
   const hideToast = useCallback(() => {
     setToast(null);
   }, []);
+
+  const canUndo = undoStack.length > 0;
+  const canRedo = redoStack.length > 0;
+  const lastUndoDescription = undoStack.length > 0 ? undoStack[undoStack.length - 1].description : null;
+  const lastRedoDescription = redoStack.length > 0 ? redoStack[redoStack.length - 1].description : null;
+
+  const undo = useCallback(() => {
+    if (undoStack.length === 0) return;
+    const entry = undoStack[undoStack.length - 1];
+    const current = latestStateRef.current;
+    const redoSnapshot: HistorySnapshot = {
+      tasks: current.tasks.map((t) => ({ ...t, tags: [...t.tags] })),
+      logs: current.logs.map((l) => ({ ...l })),
+      ganttGroupOrder: [...current.ganttGroupOrder],
+      description: entry.description,
+    };
+
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev.slice(-(MAX_HISTORY_STEPS - 1)), redoSnapshot]);
+
+    setTasks(entry.tasks);
+    setLogs(entry.logs);
+    setGanttGroupOrderSilent(entry.ganttGroupOrder);
+    showToast(`已撤销：${entry.description}`, 'info', false);
+  }, [undoStack, setGanttGroupOrderSilent, showToast]);
+
+  const redo = useCallback(() => {
+    if (redoStack.length === 0) return;
+    const entry = redoStack[redoStack.length - 1];
+    const current = latestStateRef.current;
+    const undoSnapshot: HistorySnapshot = {
+      tasks: current.tasks.map((t) => ({ ...t, tags: [...t.tags] })),
+      logs: current.logs.map((l) => ({ ...l })),
+      ganttGroupOrder: [...current.ganttGroupOrder],
+      description: entry.description,
+    };
+
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev.slice(-(MAX_HISTORY_STEPS - 1)), undoSnapshot]);
+
+    setTasks(entry.tasks);
+    setLogs(entry.logs);
+    setGanttGroupOrderSilent(entry.ganttGroupOrder);
+    showToast(`已重做：${entry.description}`, 'info', false);
+  }, [redoStack, setGanttGroupOrderSilent, showToast]);
+
+  // Global keyboard shortcuts: Ctrl+Z / Cmd+Z for Undo, Ctrl+Y / Ctrl+Shift+Z for Redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      // Do not intercept inside inputs, textareas, or contenteditable elements
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      // Do not intercept when a modal dialog is open
+      if (
+        taskModalData.isOpen ||
+        !!checkInModalTask ||
+        !!confirmDialogState?.isOpen ||
+        driveSyncModalOpen ||
+        localSyncModalOpen
+      ) {
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'z' && !e.shiftKey) {
+          if (undoStack.length > 0) {
+            e.preventDefault();
+            undo();
+          }
+        } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+          if (redoStack.length > 0) {
+            e.preventDefault();
+            redo();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    undo,
+    redo,
+    undoStack.length,
+    redoStack.length,
+    taskModalData.isOpen,
+    checkInModalTask,
+    confirmDialogState?.isOpen,
+    driveSyncModalOpen,
+    localSyncModalOpen,
+  ]);
 
   // Local folder sync (one-way: app -> file, plus manual one-off read)
   const applyPayload = useCallback(
@@ -321,10 +508,10 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setTasks(payload.tasks);
       setLogs(payload.logs);
       if (Array.isArray(payload.ganttGroupOrder)) {
-        setGanttGroupOrder(payload.ganttGroupOrder);
+        setGanttGroupOrderSilent(payload.ganttGroupOrder);
       }
     },
-    [setGanttGroupOrder]
+    [setGanttGroupOrderSilent]
   );
 
   const {
@@ -404,10 +591,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Task Actions
   const addTask = (data: { title: string; tags: string[]; status: TaskStatus }): TaskItem => {
+    const trimmedTitle = data.title.trim();
+    pushHistory(`新建任务「${trimmedTitle}」`);
     const today = getTodayString();
     const newTask: TaskItem = {
       id: 'task-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-      title: data.title.trim(),
+      title: trimmedTitle,
       tags: data.tags.map((t) => t.trim()).filter(Boolean),
       status: data.status,
       order: Date.now(),
@@ -417,10 +606,15 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       updatedAt: new Date().toISOString(),
     };
     setTasks((prev) => [newTask, ...prev]);
+    showToast(`已创建任务「${trimmedTitle}」`, 'success', true);
     return newTask;
   };
 
   const updateTask = (id: string, updates: Partial<TaskItem>) => {
+    const existing = tasks.find((t) => t.id === id);
+    if (existing) {
+      pushHistory(`编辑任务「${existing.title}」`);
+    }
     setTasks((prev) =>
       prev.map((task) => {
         if (task.id !== id) return task;
@@ -431,14 +625,24 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
       })
     );
+    if (existing) {
+      showToast(`已更新任务「${updates.title || existing.title}」`, 'success', true);
+    }
   };
 
   const deleteTask = (id: string) => {
+    const existing = tasks.find((t) => t.id === id);
+    if (existing) {
+      pushHistory(`删除任务「${existing.title}」`);
+    }
     setTasks((prev) => prev.filter((t) => t.id !== id));
     setLogs((prev) => prev.filter((l) => l.taskId !== id));
   };
 
   const moveTaskStatus = (id: string, newStatus: TaskStatus) => {
+    const existing = tasks.find((t) => t.id === id);
+    if (!existing || existing.status === newStatus) return;
+    pushHistory(`将「${existing.title}」移至${TASK_STATUS_CONFIG[newStatus].label}`);
     const today = getTodayString();
     setTasks((prev) =>
       prev.map((task) => {
@@ -467,9 +671,16 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
       })
     );
+    showToast(`已将「${existing.title}」移至${TASK_STATUS_CONFIG[newStatus].label}`, 'info', true);
   };
 
   const reorderTasks = (draggedId: string, targetId: string, position: 'before' | 'after') => {
+    const draggedTask = tasks.find((t) => t.id === draggedId);
+    const targetTask = tasks.find((t) => t.id === targetId);
+    if (!draggedTask || !targetTask || draggedId === targetId || draggedTask.status !== targetTask.status) {
+      return;
+    }
+    pushHistory(`调整任务「${draggedTask.title}」排序`);
     setTasks((prev) => {
       const dragged = prev.find((t) => t.id === draggedId);
       const target = prev.find((t) => t.id === targetId);
@@ -510,6 +721,10 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Gantt-view variant: no status restriction — tasks in same tag-group can have different statuses
   const reorderTasksGlobal = (draggedId: string, targetId: string, position: 'before' | 'after') => {
+    const draggedTask = tasks.find((t) => t.id === draggedId);
+    const targetTask = tasks.find((t) => t.id === targetId);
+    if (!draggedTask || !targetTask || draggedId === targetId) return;
+    pushHistory(`调整任务「${draggedTask.title}」排序`);
     setTasks((prev) => {
       const dragged = prev.find((t) => t.id === draggedId);
       const target = prev.find((t) => t.id === targetId);
@@ -559,6 +774,11 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     hours?: number;
     markTaskAsCompleted?: boolean;
   }): DailyLog => {
+    const targetTask = tasks.find((t) => t.id === taskId);
+    const existingLog = logs.find((l) => l.taskId === taskId && l.date === date);
+    pushHistory(
+      `${existingLog ? '更新打卡' : '添加打卡'}「${targetTask?.title || ''}」(${date})`
+    );
     let savedLog: DailyLog;
 
     const parsedHours =
@@ -629,6 +849,10 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteLog = (id: string) => {
     const target = logs.find((l) => l.id === id);
+    if (target) {
+      const targetTask = tasks.find((t) => t.id === target.taskId);
+      pushHistory(`删除「${targetTask?.title || ''}」${target.date} 的打卡记录`);
+    }
     setLogs((prev) => prev.filter((l) => l.id !== id));
     if (target) {
       setTasks((prev) =>
@@ -804,11 +1028,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           throw new Error('从 Google Drive 读取的数据结构异常或为空');
         }
 
+        pushHistory('从 Google Drive 拉取数据');
         setTasks(payload.tasks);
         setLogs(payload.logs);
         // Restore group order if present in cloud data
         if (Array.isArray(payload.ganttGroupOrder) && payload.ganttGroupOrder.length > 0) {
-          setGanttGroupOrder(payload.ganttGroupOrder);
+          setGanttGroupOrderSilent(payload.ganttGroupOrder);
         }
 
         setDriveFileId(fileId);
@@ -836,7 +1061,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsSyncing(false);
       }
     },
-    [driveFileId, requestConfirm, showToast, user, setGanttGroupOrder]
+    [driveFileId, requestConfirm, showToast, user, setGanttGroupOrderSilent, pushHistory]
   );
 
   const loginWithGoogle = async (forceConsent: boolean = false): Promise<boolean> => {
@@ -959,12 +1184,13 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       variant: 'danger',
     });
     if (confirmed) {
+      pushHistory('恢复初始示例数据');
       const initial = createInitialSampleData();
       setTasks(initial.tasks);
       setLogs(initial.logs);
       setSelectedTag(null);
       setSearchQuery('');
-      showToast('已恢复初始示例数据', 'info');
+      showToast('已恢复初始示例数据', 'info', true);
     }
   };
 
@@ -983,10 +1209,11 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const parsed = JSON.parse(jsonStr);
       if (Array.isArray(parsed.tasks) && Array.isArray(parsed.logs)) {
+        pushHistory('导入 JSON 备份数据');
         setTasks(parsed.tasks);
         setLogs(parsed.logs);
         if (Array.isArray(parsed.ganttGroupOrder)) {
-          setGanttGroupOrder(parsed.ganttGroupOrder);
+          setGanttGroupOrderSilent(parsed.ganttGroupOrder);
         }
         return true;
       }
@@ -1037,6 +1264,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         resetData,
         exportData,
         importData,
+        canUndo,
+        canRedo,
+        lastUndoDescription,
+        lastRedoDescription,
+        undo,
+        redo,
         ganttGroupOrder,
         setGanttGroupOrder,
         confirmDialogState,

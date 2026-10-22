@@ -14,6 +14,8 @@ import {
   SlidersHorizontal,
   Cloud,
   FolderSync,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 import { getTodayString } from '../utils/date';
@@ -32,6 +34,12 @@ export const Header: React.FC = () => {
     openTaskModal,
     exportData,
     importData,
+    canUndo,
+    canRedo,
+    lastUndoDescription,
+    lastRedoDescription,
+    undo,
+    redo,
     user,
     isSyncing,
     syncStatus,
@@ -61,7 +69,7 @@ export const Header: React.FC = () => {
         if (content) {
           const success = importData(content);
           if (success) {
-            showToast('数据导入成功！', 'success');
+            showToast('数据导入成功！', 'success', true);
           } else {
             showToast('导入失败：文件格式不符合要求', 'error');
           }
@@ -160,6 +168,38 @@ export const Header: React.FC = () => {
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>新建任务</span>
           </button>
+
+          {/* Undo / Redo Controls */}
+          <div className="flex items-center gap-1 border-l border-zinc-200 dark:border-zinc-800 pl-2">
+            <button
+              type="button"
+              onClick={undo}
+              disabled={!canUndo}
+              title={canUndo ? `撤销：${lastUndoDescription} (Ctrl+Z)` : '暂无可撤销操作 (Ctrl+Z)'}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                canUndo
+                  ? 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 cursor-pointer shadow-2xs'
+                  : 'border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 text-zinc-300 dark:text-zinc-600 cursor-not-allowed'
+              }`}
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">撤销</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={redo}
+              disabled={!canRedo}
+              title={canRedo ? `重做：${lastRedoDescription} (Ctrl+Y)` : '暂无可重做操作 (Ctrl+Y)'}
+              className={`p-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                canRedo
+                  ? 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 cursor-pointer shadow-2xs'
+                  : 'border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 text-zinc-300 dark:text-zinc-600 cursor-not-allowed'
+              }`}
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
           {/* Backup, Sync & Import/Export Menu */}
           <div className="flex items-center gap-1.5 border-l border-zinc-200 dark:border-zinc-800 pl-2.5">

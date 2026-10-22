@@ -156,14 +156,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragOve
                       setMenuOpen(false);
                       const confirmed = await requestConfirm({
                         title: '删除任务',
-                        message: `确定要删除「${task.title}」及其所有打卡记录吗？此操作无法撤销。`,
+                        message: `确定要删除「${task.title}」及其所有打卡记录吗？删除后可通过「撤销」恢复。`,
                         confirmText: '确认删除',
                         cancelText: '取消',
                         variant: 'danger',
                       });
                       if (confirmed) {
                         deleteTask(task.id);
-                        showToast(`已删除任务「${task.title}」`, 'info');
+                        showToast(`已删除任务「${task.title}」`, 'info', true);
                       }
                     }}
                     className="w-full px-3 py-1.5 text-left flex items-center gap-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"

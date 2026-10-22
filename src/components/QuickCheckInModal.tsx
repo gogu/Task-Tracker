@@ -105,7 +105,8 @@ export const QuickCheckInModal: React.FC = () => {
       existingLogId
         ? `已更新「${task.title}」${selectedDate} 的打卡详情`
         : `已为「${task.title}」添加 ${selectedDate} 打卡记录`,
-      'success'
+      'success',
+      true
     );
     closeCheckInModal();
   };
@@ -153,7 +154,7 @@ export const QuickCheckInModal: React.FC = () => {
   const handleDelete = () => {
     if (existingLogId) {
       deleteLog(existingLogId);
-      showToast(`已清空 ${selectedDate} 的打卡记录`, 'info');
+      showToast(`已清空 ${selectedDate} 的打卡记录`, 'info', true);
       closeCheckInModal();
     }
   };

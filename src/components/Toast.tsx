@@ -1,16 +1,16 @@
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, X, Undo2 } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 
 export const Toast: React.FC = () => {
-  const { toast, hideToast } = useTaskContext();
+  const { toast, hideToast, canUndo, undo } = useTaskContext();
 
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => {
         hideToast();
-      }, 3500);
+      }, 4000);
       return () => clearTimeout(timer);
     }
   }, [toast, hideToast]);
@@ -32,7 +32,7 @@ export const Toast: React.FC = () => {
             isSuccess
               ? 'bg-emerald-50 dark:bg-emerald-950 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
               : isError
-              ? 'bg-rose-50 dark:bg-rose-950 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+              ? 'bg-rose-50 dark:bg-rose-950 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-zinc-200'
               : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-700'
           }`}
         >
@@ -40,10 +40,26 @@ export const Toast: React.FC = () => {
           {isError && <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />}
           {!isSuccess && !isError && <Info className="w-4 h-4 text-blue-400 shrink-0" />}
           <span>{toast.message}</span>
+          {toast.allowUndo && canUndo && (
+            <button
+              type="button"
+              onClick={() => {
+                undo();
+              }}
+              className={`ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer ${
+                isSuccess
+                  ? 'bg-emerald-200/70 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 hover:bg-emerald-300/70'
+                  : 'bg-white/15 dark:bg-zinc-900/15 hover:bg-white/25 dark:hover:bg-zinc-900/25'
+              }`}
+            >
+              <Undo2 className="w-3 h-3" />
+              <span>撤销</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={hideToast}
-            className="ml-2 p-0.5 opacity-60 hover:opacity-100 transition-opacity"
+            className="ml-1 p-0.5 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>

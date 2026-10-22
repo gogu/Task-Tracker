@@ -130,7 +130,7 @@ export const TaskModal: React.FC = () => {
     if (!task) return;
     const confirmed = await requestConfirm({
       title: '删除任务',
-      message: `确定要删除任务「${task.title}」及其所有时序打卡记录吗？此操作无法撤销。`,
+      message: `确定要删除任务「${task.title}」及其所有时序打卡记录吗？删除后可通过「撤销」恢复。`,
       confirmText: '确认删除',
       cancelText: '取消',
       variant: 'danger',
@@ -138,7 +138,7 @@ export const TaskModal: React.FC = () => {
     if (confirmed) {
       deleteTask(task.id);
       closeTaskModal();
-      showToast(`已删除任务「${task.title}」`, 'info');
+      showToast(`已删除任务「${task.title}」`, 'info', true);
     }
   };
 
