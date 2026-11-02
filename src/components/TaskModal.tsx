@@ -24,6 +24,8 @@ export const TaskModal: React.FC = () => {
   const [status, setStatus] = useState<TaskStatus>(defaultStatus || 'in_progress');
   const [tags, setTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
 
@@ -241,7 +243,36 @@ export const TaskModal: React.FC = () => {
                 {tags.map((tag, idx) => (
                   <span
                     key={tag}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium ${
+                    draggable
+                    onDragStart={(e) => {
+                      setDragIdx(idx);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (overIdx !== idx) setOverIdx(idx);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragIdx !== null && dragIdx !== idx) {
+                        const next = [...tags];
+                        const [moved] = next.splice(dragIdx, 1);
+                        next.splice(idx, 0, moved);
+                        setTags(next);
+                      }
+                      setDragIdx(null);
+                      setOverIdx(null);
+                    }}
+                    onDragEnd={() => {
+                      setDragIdx(null);
+                      setOverIdx(null);
+                    }}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium cursor-grab active:cursor-grabbing select-none ${
+                      dragIdx === idx ? 'opacity-40' : ''
+                    } ${
+                      overIdx === idx && dragIdx !== null && dragIdx !== idx ? 'ring-2 ring-blue-500' : ''
+                    } ${
                       idx === 0
                         ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 ring-1 ring-blue-500/30'
                         : 'bg-zinc-200/80 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200'
