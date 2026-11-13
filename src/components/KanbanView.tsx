@@ -319,6 +319,19 @@ export const KanbanView: React.FC = () => {
     [tasks]
   );
 
+  const pinnedActiveTasks = useMemo(() => {
+    const unchecked: TaskItem[] = [];
+    const checked: TaskItem[] = [];
+    activeInProgressTasks.forEach((t) => {
+      if (getLog(t.id, todayStr)) {
+        checked.push(t);
+      } else {
+        unchecked.push(t);
+      }
+    });
+    return [...unchecked, ...checked].slice(0, 5);
+  }, [activeInProgressTasks, getLog, todayStr]);
+
   const sortedAllTags = useMemo(() => {
     return [...allTags].sort((a, b) => {
       const countA = tasks.filter((t) => t.tags.includes(a)).length;
@@ -1086,7 +1099,7 @@ export const KanbanView: React.FC = () => {
               type="button"
               onClick={() => setNpcModalOpen(true)}
               className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
-              title="自定义看板娘名字与立绘"
+              title="自定义看板娘名字、预设与立绘"
             >
               <Settings className="w-4 h-4 text-amber-300" />
               <span className="hidden xl:inline">看板娘</span>
@@ -1169,93 +1182,65 @@ export const KanbanView: React.FC = () => {
       </header>
 
       {/* ── Layer 1: Dynamic Center Reception / Left-Right Split Interactive Stage ── */}
-      <div className="relative flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden overflow-x-hidden">
+      <div className="relative flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden overflow-x-hidden bg-[#1a110b]">
+        {/* Continuous Full-Stage Background Layer for Sprite Overlay Mode */}
+        {npcConfig.displayMode === 'sprite' && (
+          <div
+            className="absolute inset-0 bg-cover bg-center transition-all duration-500 pointer-events-none"
+            style={{
+              backgroundImage: `url(${npcConfig.customBgUrl || './npc/bg-guild-hall.jpg'})`,
+            }}
+          >
+            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/45" />
+          </div>
+        )}
+
         {/* Left / Center NPC Visual Stage */}
         {showLeftNpcStage && (
           <div
             onClick={handleNpcStageClick}
-            className={`relative min-h-0 overflow-hidden cursor-pointer group/stage transition-[width] duration-300 ease-out ${
+            className={`relative z-10 min-h-0 flex flex-col justify-end overflow-hidden cursor-pointer group/stage transition-[width] duration-300 ease-out ${
               !isSplitStage
                 ? 'w-full flex-1 h-full'
                 : activeOverlay === 'none'
-                  ? 'w-full lg:w-[40%] xl:w-[38%] 2xl:w-[36%] h-[250px] sm:h-[280px] lg:h-full shrink-0 border-b lg:border-b-0 lg:border-r border-amber-500/35'
-                  : 'w-full lg:w-[31%] xl:w-[29%] 2xl:w-[27%] h-[220px] lg:h-full shrink-0 border-b lg:border-b-0 lg:border-r border-amber-500/35'
+                  ? 'w-full lg:w-[40%] xl:w-[38%] 2xl:w-[36%] h-[360px] sm:h-[400px] lg:h-full shrink-0 border-b lg:border-b-0 lg:border-r border-amber-500/35'
+                  : 'w-full lg:w-[31%] xl:w-[29%] 2xl:w-[27%] h-[330px] sm:h-[370px] lg:h-full shrink-0 border-b lg:border-b-0 lg:border-r border-amber-500/35'
             }`}
           >
-            {/* Warm fantasy fallback backdrop */}
-            <div
-              className="absolute inset-0 bg-gradient-to-b from-[#332216] via-[#261810] to-[#1a110b]"
-              style={
-                npcConfig.displayMode === 'sprite' && npcConfig.customBgUrl
-                  ? {
-                      backgroundImage: `url(${npcConfig.customBgUrl})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                    }
-                  : undefined
-              }
-            >
-              <div className="absolute -top-20 left-1/4 w-96 h-96 rounded-full bg-amber-500/15 blur-3xl pointer-events-none" />
-              <div className="absolute top-10 right-1/4 w-72 h-72 rounded-full bg-orange-400/10 blur-3xl pointer-events-none" />
-            </div>
+            {/* Warm fantasy fallback backdrop (when in scene mode or no custom bg) */}
+            {npcConfig.displayMode !== 'sprite' && (
+              <div className="absolute inset-0 bg-gradient-to-b from-[#332216] via-[#261810] to-[#1a110b]">
+                <div className="absolute -top-20 left-1/4 w-96 h-96 rounded-full bg-amber-500/15 blur-3xl pointer-events-none" />
+                <div className="absolute top-10 right-1/4 w-72 h-72 rounded-full bg-orange-400/10 blur-3xl pointer-events-none" />
+              </div>
+            )}
 
-            {/* NPC Illustration Layer */}
-            <AnimatePresence mode="wait">
-              {!imgLoadFailed ? (
-                npcConfig.displayMode === 'scene' ? (
-                  <motion.img
-                    key={`scene-${expression}-${activeImgSrc}`}
-                    src={activeImgSrc}
-                    alt={`${npcConfig.name} - ${EXPRESSION_META[expression].label}`}
-                    onError={() => setImgLoadFailed(true)}
-                    initial={{ opacity: 0.72, scale: 1.015 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0.72 }}
-                    transition={{ duration: 0.28, ease: 'easeOut' }}
-                    className="absolute inset-0 w-full h-full object-cover object-[center_20%]"
-                    draggable={false}
-                  />
-                ) : (
-                  <motion.div
-                    key={`sprite-${expression}-${activeImgSrc}`}
-                    initial={{ opacity: 0.6, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0.6 }}
-                    transition={{ duration: 0.25 }}
-                    className="absolute inset-0 flex items-end justify-center pointer-events-none"
-                  >
-                    <img
-                      src={activeImgSrc}
-                      alt={`${npcConfig.name} - ${EXPRESSION_META[expression].label}`}
-                      onError={() => setImgLoadFailed(true)}
-                      className="max-h-[94%] max-w-[88%] object-contain drop-shadow-[0_12px_28px_rgba(0,0,0,0.65)] guild-float-slow"
-                      draggable={false}
-                    />
-                  </motion.div>
-                )
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-amber-100/80 p-6 text-center">
-                  <div className="w-24 h-24 rounded-full bg-amber-900/50 border-2 border-amber-500/50 flex items-center justify-center text-4xl shadow-lg mb-3">
-                    {expression === 'cheer'
-                      ? '🎉'
-                      : expression === 'happy'
-                      ? '😊'
-                      : expression === 'thinking'
-                      ? '🤔'
-                      : expression === 'sleepy'
-                      ? '🥱'
-                      : '✨'}
-                  </div>
-                  <p className="text-base font-bold text-amber-200">{npcConfig.name}</p>
-                  <p className="text-xs sm:text-sm text-amber-300/75 mt-1">
-                    当前表情立绘未加载，可点击右上角「看板娘」设置上传或更换图片
-                  </p>
-                </div>
-              )}
-            </AnimatePresence>
+            {/* Full-Bleed Scene CG Layer (when in scene mode) */}
+            {npcConfig.displayMode === 'scene' && !imgLoadFailed && (
+              <AnimatePresence mode="wait">
+                <motion.img
+                  key={`scene-${expression}-${activeImgSrc}`}
+                  src={activeImgSrc}
+                  alt={`${npcConfig.name} - ${EXPRESSION_META[expression].label}`}
+                  onError={() => setImgLoadFailed(true)}
+                  initial={{ opacity: 0.72, scale: 1.015 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0.72 }}
+                  transition={{ duration: 0.28, ease: 'easeOut' }}
+                  className="absolute inset-0 w-full h-full object-cover object-[center_18%]"
+                  draggable={false}
+                />
+              </AnimatePresence>
+            )}
 
             {/* Bottom cinematic vignette */}
-            <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-[#140e0a] via-[#140e0a]/65 to-transparent pointer-events-none" />
+            <div
+              className={`absolute inset-x-0 bottom-0 pointer-events-none ${
+                npcConfig.displayMode === 'scene'
+                  ? 'h-44 bg-gradient-to-t from-[#140e0a] via-[#140e0a]/65 to-transparent'
+                  : 'h-32 bg-gradient-to-t from-[#140e0a]/85 via-[#140e0a]/35 to-transparent'
+              }`}
+            />
 
             {/* Floating Hearts on Click */}
             {floatingHearts.map((h) => (
@@ -1269,71 +1254,134 @@ export const KanbanView: React.FC = () => {
               </div>
             ))}
 
+            {/* Center Mode: Pinned Active Quests Board (floating top-left) */}
+            {!isSplitStage && activeInProgressTasks.length > 0 && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="hidden md:flex flex-col gap-2 absolute top-4 left-4 sm:top-6 sm:left-6 z-20 w-72 sm:w-80 cursor-default"
+              >
+                <div className="flex items-center justify-between px-1.5">
+                  <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-200 drop-shadow">
+                    📌 当前攻略中 ({activeInProgressTasks.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveLedgerTab('in_progress');
+                      switchSection('ledger');
+                    }}
+                    className="text-xs text-amber-300/90 hover:text-amber-100 underline cursor-pointer"
+                  >
+                    全部 →
+                  </button>
+                </div>
+                {pinnedActiveTasks.map((task) => {
+                  const cat = getQuestCategoryBadge(task.tags);
+                  const todayLog = getLog(task.id, todayStr);
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => openInspectTask(task)}
+                      className="px-3.5 py-2 rounded-xl bg-black/65 hover:bg-black/85 border border-amber-500/40 hover:border-amber-400/80 backdrop-blur-md text-amber-50 flex items-center justify-between gap-2.5 cursor-pointer transition-all shadow-lg"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base shrink-0">{cat.icon}</span>
+                        <span className="text-xs sm:text-sm font-bold truncate">{task.title}</span>
+                      </div>
+                      {todayLog ? (
+                        <span className="shrink-0 text-xs px-2 py-0.5 rounded-md bg-emerald-500/25 text-emerald-300 border border-emerald-400/45 font-bold">
+                          ✓ 已报
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCheckInForTask(task, todayStr);
+                          }}
+                          className="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-amber-950 font-extrabold transition-colors cursor-pointer"
+                        >
+                          打卡
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Split-Stage Mode: Top Companion Floating Controls */}
+            {isSplitStage && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between gap-2 cursor-default"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveOverlay('none');
+                    setViewMode('kanban');
+                    returnToHub();
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-black/70 hover:bg-black/85 border border-amber-400/50 text-amber-100 text-xs sm:text-sm font-bold flex items-center gap-1.5 backdrop-blur-md shadow-md cursor-pointer transition-colors"
+                >
+                  <Home className="w-3.5 h-3.5 text-amber-300" />
+                  <span>返回大厅中央</span>
+                </button>
+
+                <div className="px-3 py-1.5 rounded-xl bg-black/70 border border-amber-400/40 text-xs sm:text-sm font-bold text-amber-100 flex items-center gap-2 backdrop-blur-md shadow-md">
+                  <span className="flex items-center gap-1 text-rose-300">
+                    <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-400" />
+                    <span>{affection}</span>
+                  </span>
+                  <span className="text-amber-400/50">·</span>
+                  <span className="text-amber-200">{EXPRESSION_META[expression].badge}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Shared Portrait Stage (decoupled fixed frame so mode-switch & dialogue height never shift or shrink the sprite) */}
+            <div className="absolute inset-x-0 top-2 sm:top-3 bottom-[190px] sm:bottom-[210px] xl:bottom-[225px] z-10 pointer-events-none overflow-hidden">
+              {imgLoadFailed ? (
+                <div className="w-full h-full flex flex-col items-center justify-center text-amber-100/80 p-4 text-center">
+                  <div className="w-20 h-20 rounded-full bg-amber-900/50 border-2 border-amber-500/50 flex items-center justify-center text-3xl shadow-lg mb-2.5">
+                    {expression === 'cheer'
+                      ? '🎉'
+                      : expression === 'happy'
+                      ? '😊'
+                      : expression === 'thinking'
+                      ? '🤔'
+                      : expression === 'sleepy'
+                      ? '🥱'
+                      : '✨'}
+                  </div>
+                  <p className="text-sm sm:text-base font-bold text-amber-200">{npcConfig.name}</p>
+                  <p className="text-xs text-amber-300/75 mt-1 max-w-xs">
+                    当前表情立绘未加载，可点击右上角「看板娘」设置上传或更换图片
+                  </p>
+                </div>
+              ) : (
+                npcConfig.displayMode === 'sprite' && (
+                  <div className="w-full h-full flex items-end justify-center pt-6 sm:pt-4">
+                    <img
+                      src={activeImgSrc}
+                      alt={`${npcConfig.name} - ${EXPRESSION_META[expression].label}`}
+                      onError={() => setImgLoadFailed(true)}
+                      className="h-full w-auto max-w-none shrink-0 object-contain object-bottom drop-shadow-[0_12px_28px_rgba(0,0,0,0.65)] guild-float-slow"
+                      draggable={false}
+                    />
+                  </div>
+                )
+              )}
+            </div>
+
             {/* ── CENTER RECEPTION MODE UI ── */}
             {!isSplitStage && (
-              <>
-                {/* Enlarged Pinned Active Quests Board */}
-                {activeInProgressTasks.length > 0 && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="hidden md:flex flex-col gap-2 absolute top-4 left-4 sm:top-6 sm:left-6 z-20 w-72 sm:w-80 cursor-default"
-                  >
-                    <div className="flex items-center justify-between px-1.5">
-                      <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-200 drop-shadow">
-                        📌 当前攻略中 ({activeInProgressTasks.length})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveLedgerTab('in_progress');
-                          switchSection('ledger');
-                        }}
-                        className="text-xs text-amber-300/90 hover:text-amber-100 underline cursor-pointer"
-                      >
-                        全部 →
-                      </button>
-                    </div>
-                    {activeInProgressTasks.slice(0, 3).map((task) => {
-                      const cat = getQuestCategoryBadge(task.tags);
-                      const todayLog = getLog(task.id, todayStr);
-                      return (
-                        <div
-                          key={task.id}
-                          onClick={() => openInspectTask(task)}
-                          className="px-3.5 py-2.5 rounded-xl bg-black/65 hover:bg-black/85 border border-amber-500/40 hover:border-amber-400/80 backdrop-blur-md text-amber-50 flex items-center justify-between gap-2.5 cursor-pointer transition-all shadow-lg"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-base shrink-0">{cat.icon}</span>
-                            <span className="text-xs sm:text-sm font-bold truncate">{task.title}</span>
-                          </div>
-                          {todayLog ? (
-                            <span className="shrink-0 text-xs px-2 py-0.5 rounded-md bg-emerald-500/25 text-emerald-300 border border-emerald-400/45 font-bold">
-                              ✓ 已报
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openCheckInForTask(task, todayStr);
-                              }}
-                              className="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-amber-950 font-extrabold transition-colors cursor-pointer"
-                            >
-                              打卡
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Floating Visual-Novel Reception Dialogue & Command Card */}
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute inset-x-0 bottom-5 sm:bottom-8 z-20 px-4 sm:px-8 flex justify-center cursor-default"
-                >
-                  <div className="relative w-full max-w-4xl xl:max-w-5xl bg-[#18120e]/92 backdrop-blur-md border-2 border-amber-500/70 rounded-3xl shadow-[0_24px_64px_rgba(0,0,0,0.8)] p-5 sm:p-6 xl:p-7 text-amber-50">
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="relative mt-auto shrink-0 z-20 px-4 sm:px-8 pb-4 sm:pb-6 pt-4 flex justify-center cursor-default"
+              >
+                <div className="relative w-full max-w-4xl xl:max-w-5xl max-h-[55vh] sm:max-h-none overflow-y-auto sm:overflow-visible bg-[#18120e]/92 backdrop-blur-md border-2 border-amber-500/70 rounded-3xl shadow-[0_24px_64px_rgba(0,0,0,0.8)] p-4 sm:p-5 xl:p-6 text-amber-50">
                     {/* Nameplate & Affection Pill */}
                     <div className="absolute -top-4 left-6 right-6 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -1368,21 +1416,29 @@ export const KanbanView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Large Readable Dialogue Text */}
+                    {/* Large Readable Dialogue Text (pre-sized to prevent layout shift during typing) */}
                     <div
                       onClick={() => {
                         if (isTyping) setTypedLength(dialogueText.length);
                       }}
-                      className="text-base sm:text-lg xl:text-xl leading-relaxed text-amber-50 font-medium min-h-[3.2rem] mt-2 mb-5 cursor-pointer"
+                      className="grid text-base sm:text-lg xl:text-xl leading-relaxed text-amber-50 font-medium min-h-[3.2rem] mt-1.5 mb-3.5 cursor-pointer"
                     >
-                      <span>{displayedDialogue}</span>
-                      {isTyping && (
-                        <span className="inline-block w-2 h-5 ml-1.5 bg-amber-400 animate-pulse align-middle" />
-                      )}
+                      <span
+                        aria-hidden="true"
+                        className="col-start-1 row-start-1 invisible select-none pointer-events-none"
+                      >
+                        {dialogueText}
+                      </span>
+                      <span className="col-start-1 row-start-1">
+                        <span>{displayedDialogue}</span>
+                        {isTyping && (
+                          <span className="inline-block w-2 h-5 ml-1.5 bg-amber-400 animate-pulse align-middle" />
+                        )}
+                      </span>
                     </div>
 
                     {/* 6 Large RPG Choice Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                       <button
                         type="button"
                         onClick={startCheckInFlow}
@@ -1513,49 +1569,26 @@ export const KanbanView: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </>
             )}
 
-            {/* ── SPLIT-STAGE LEFT COMPANION UI ── */}
+            {/* ── SPLIT-STAGE LEFT COMPANION UI (Bottom Live Speech Bubble & Quick Affair Switcher) ── */}
             {isSplitStage && (
-              <>
-                {/* Top Companion Floating Controls */}
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between gap-2 cursor-default"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveOverlay('none');
-                      setViewMode('kanban');
-                      returnToHub();
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-black/70 hover:bg-black/85 border border-amber-400/50 text-amber-100 text-xs sm:text-sm font-bold flex items-center gap-1.5 backdrop-blur-md shadow-md cursor-pointer transition-colors"
-                  >
-                    <Home className="w-3.5 h-3.5 text-amber-300" />
-                    <span>返回大厅中央</span>
-                  </button>
-
-                  <div className="px-3 py-1.5 rounded-xl bg-black/70 border border-amber-400/40 text-xs sm:text-sm font-bold text-amber-100 flex items-center gap-2 backdrop-blur-md shadow-md">
-                    <span className="flex items-center gap-1 text-rose-300">
-                      <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-400" />
-                      <span>{affection}</span>
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="relative mt-auto shrink-0 z-20 mx-3 mb-3 sm:mx-4 sm:mb-4 bg-[#18120e]/92 backdrop-blur-md border-2 border-amber-500/70 rounded-2xl p-3.5 sm:p-4 shadow-2xl text-amber-50 cursor-default"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-baseline gap-1.5 min-w-0">
+                    <span className="text-sm sm:text-base font-extrabold text-amber-200 tracking-wide shrink-0">
+                      {npcConfig.name}
                     </span>
-                    <span className="text-amber-400/50">·</span>
-                    <span className="text-amber-200">{EXPRESSION_META[expression].badge}</span>
+                    {npcConfig.title && (
+                      <span className="text-xs text-amber-300/75 font-semibold truncate">
+                        · {npcConfig.title}
+                      </span>
+                    )}
                   </div>
-                </div>
-
-                {/* Bottom Left Live Speech Bubble & Quick Affair Switcher */}
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute inset-x-3 sm:inset-x-4 bottom-3 sm:bottom-4 z-20 bg-[#18120e]/92 backdrop-blur-md border-2 border-amber-500/70 rounded-2xl p-4 sm:p-5 shadow-2xl text-amber-50 cursor-default"
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="text-xs sm:text-sm font-extrabold text-amber-300 tracking-wide">
-                      【{npcConfig.title}】{npcConfig.name}
-                    </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => {
@@ -1567,21 +1600,30 @@ export const KanbanView: React.FC = () => {
                       💬 闲聊
                     </button>
                   </div>
+                </div>
 
-                  <div
-                    onClick={() => {
-                      if (isTyping) setTypedLength(dialogueText.length);
-                    }}
-                    className="text-sm sm:text-base xl:text-lg leading-relaxed text-amber-50 font-medium min-h-[2.8rem] cursor-pointer"
+                <div
+                  onClick={() => {
+                    if (isTyping) setTypedLength(dialogueText.length);
+                  }}
+                  className="grid text-sm sm:text-base xl:text-lg leading-relaxed text-amber-50 font-medium min-h-[2.8rem] cursor-pointer"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="col-start-1 row-start-1 invisible select-none pointer-events-none"
                   >
+                    {dialogueText}
+                  </span>
+                  <span className="col-start-1 row-start-1">
                     <span>{displayedDialogue}</span>
                     {isTyping && (
                       <span className="inline-block w-1.5 h-4 ml-1 bg-amber-400 animate-pulse align-middle" />
                     )}
-                  </div>
+                  </span>
+                </div>
 
-                  {/* Quick Affair Switcher Bar */}
-                  <div className="pt-3 mt-3 border-t border-amber-500/25 flex flex-wrap gap-1.5">
+                {/* Quick Affair Switcher Bar */}
+                <div className="pt-2.5 mt-2.5 border-t border-amber-500/25 flex flex-wrap gap-1.5">
                     <button
                       type="button"
                       onClick={startCheckInFlow}
@@ -1638,16 +1680,21 @@ export const KanbanView: React.FC = () => {
                     >
                       🔔 催更{staleList.length > 0 ? `(${staleList.length})` : ''}
                     </button>
-                  </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         )}
 
         {/* ── Right Side Information & Interactive Workspace (Split-Stage Mode) ── */}
         {isSplitStage && (
-          <div className="flex-1 min-w-0 h-full min-h-0 flex flex-col p-2.5 sm:p-4 xl:p-5 bg-[#140e0a]/95 overflow-hidden overflow-x-hidden">
+          <div
+            className={`relative z-10 flex-1 min-w-0 h-full min-h-0 flex flex-col p-2.5 sm:p-4 xl:p-5 overflow-hidden overflow-x-hidden ${
+              npcConfig.displayMode === 'sprite'
+                ? 'bg-[#140e0a]/65 backdrop-blur-md'
+                : 'bg-[#140e0a]/95'
+            }`}
+          >
             {/* OVERLAY A: PARCHMENT QUEST LEDGER */}
             {activeOverlay === 'ledger' && (
               <div className="flex-1 min-h-0 guild-parchment rounded-2xl border-2 border-amber-700/60 dark:border-amber-600/50 shadow-2xl flex flex-col overflow-hidden overflow-x-hidden">

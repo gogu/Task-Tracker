@@ -4,6 +4,7 @@ import { getTodayString, diffInDays, formatHours } from './date';
 export type NpcExpression = 'normal' | 'happy' | 'cheer' | 'thinking' | 'sleepy';
 
 export interface NpcConfig {
+  presetId?: string;
   name: string;
   title: string;
   displayMode: 'scene' | 'sprite';
@@ -11,7 +12,16 @@ export interface NpcConfig {
   customBgUrl?: string;
 }
 
-export const NPC_STORAGE_KEY = 'guild_npc_custom_config_v1';
+export interface NpcPreset {
+  id: string;
+  badge: string;
+  themeName: string;
+  desc: string;
+  greeting: string;
+  config: NpcConfig;
+}
+
+export const NPC_STORAGE_KEY = 'guild_npc_custom_config_v2';
 export const NPC_AFFECTION_STORAGE_KEY = 'guild_npc_affection_v1';
 
 export const EXPRESSION_META: Record<
@@ -45,18 +55,99 @@ export const EXPRESSION_META: Record<
   },
 };
 
-export const DEFAULT_NPC_CONFIG: NpcConfig = {
-  name: '艾莉丝',
-  title: '公会首席接待员',
-  displayMode: 'scene',
-  expressions: {
-    normal: './npc/guild-normal.jpg',
-    happy: './npc/guild-happy.jpg',
-    cheer: './npc/guild-cheer.jpg',
-    thinking: './npc/guild-thinking.jpg',
-    sleepy: './npc/guild-sleepy.jpg',
+export const NPC_PRESETS: NpcPreset[] = [
+  {
+    id: 'fantasy_guild',
+    badge: '🏰 奇幻公会',
+    themeName: '晨曦冒险者公会',
+    desc: '暖木与琉璃花窗交织的古典公会大厅，温柔可靠的首席接待员',
+    greeting: '欢迎回到晨曦冒险者公会！我是首席接待员艾莉丝，今天要登记新委托还是汇报进度呢？',
+    config: {
+      presetId: 'fantasy_guild',
+      name: '艾莉丝',
+      title: '公会首席接待员',
+      displayMode: 'sprite',
+      customBgUrl: './npc/bg-guild-hall.jpg',
+      expressions: {
+        normal: './npc/alice-normal.png',
+        happy: './npc/alice-happy.png',
+        cheer: './npc/alice-happy.png',
+        thinking: './npc/alice-thinking.png',
+        sleepy: './npc/alice-thinking.png',
+      },
+    },
   },
-  customBgUrl: '',
+  {
+    id: 'cyber_tavern',
+    badge: '🌃 赛博酒馆',
+    themeName: '霓虹星际酒馆',
+    desc: '霓虹雨夜与全息街机环绕的地下酒馆，酷飒的夜城情报调酒师',
+    greeting: 'Yo，欢迎光临霓虹星际酒馆！我是调酒师琳恩·V，今晚想开哪款赛博委托还是先来打卡补给？',
+    config: {
+      presetId: 'cyber_tavern',
+      name: '琳恩·V',
+      title: '夜城情报调酒师',
+      displayMode: 'sprite',
+      customBgUrl: './npc/bg-cyber-bar.jpg',
+      expressions: {
+        normal: './npc/lynn-normal.png',
+        happy: './npc/lynn-happy.png',
+        cheer: './npc/lynn-happy.png',
+        thinking: './npc/lynn-thinking.png',
+        sleepy: './npc/lynn-thinking.png',
+      },
+    },
+  },
+  {
+    id: 'sakura_shrine',
+    badge: '🌸 绯樱书院',
+    themeName: '绯樱古籍茶屋',
+    desc: '落樱庭院与古籍茶香相伴的和风书院，恬静博学的司书巫女',
+    greeting: '贵安，欢迎来到绯樱古籍茶屋~ 我是司书白川朔夜，先沏一盏清茶，再慢慢梳理今天的游历吧。',
+    config: {
+      presetId: 'sakura_shrine',
+      name: '白川朔夜',
+      title: '绯樱书院司书',
+      displayMode: 'sprite',
+      customBgUrl: './npc/bg-sakura-shrine.jpg',
+      expressions: {
+        normal: './npc/sakuya-normal.png',
+        happy: './npc/sakuya-happy.png',
+        cheer: './npc/sakuya-cheer.png',
+        thinking: './npc/sakuya-thinking.png',
+        sleepy: './npc/sakuya-sleepy.png',
+      },
+    },
+  },
+  {
+    id: 'classic_cg',
+    badge: '🖼️ 原版CG',
+    themeName: '古典全场景CG',
+    desc: '自带背景的横版视觉小说全场景插画模式',
+    greeting: '已切换至古典全场景 CG 模式！需要我为你调阅哪一份委托档案呢？',
+    config: {
+      presetId: 'classic_cg',
+      name: '艾莉丝',
+      title: '公会首席接待员',
+      displayMode: 'scene',
+      customBgUrl: '',
+      expressions: {
+        normal: './npc/guild-normal.jpg',
+        happy: './npc/guild-happy.jpg',
+        cheer: './npc/guild-cheer.jpg',
+        thinking: './npc/guild-thinking.jpg',
+        sleepy: './npc/guild-sleepy.jpg',
+      },
+    },
+  },
+];
+
+const CLASSIC_CG_PRESET =
+  NPC_PRESETS.find((preset) => preset.id === 'classic_cg') ?? NPC_PRESETS[0];
+
+export const DEFAULT_NPC_CONFIG: NpcConfig = {
+  ...CLASSIC_CG_PRESET.config,
+  expressions: { ...CLASSIC_CG_PRESET.config.expressions },
 };
 
 export function loadNpcConfig(): NpcConfig {
@@ -65,10 +156,11 @@ export function loadNpcConfig(): NpcConfig {
     if (!raw) return { ...DEFAULT_NPC_CONFIG, expressions: { ...DEFAULT_NPC_CONFIG.expressions } };
     const parsed = JSON.parse(raw) as Partial<NpcConfig>;
     return {
+      presetId: typeof parsed.presetId === 'string' ? parsed.presetId : undefined,
       name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : DEFAULT_NPC_CONFIG.name,
       title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : DEFAULT_NPC_CONFIG.title,
-      displayMode: parsed.displayMode === 'sprite' ? 'sprite' : 'scene',
-      customBgUrl: typeof parsed.customBgUrl === 'string' ? parsed.customBgUrl : '',
+      displayMode: parsed.displayMode === 'scene' ? 'scene' : 'sprite',
+      customBgUrl: typeof parsed.customBgUrl === 'string' ? parsed.customBgUrl : DEFAULT_NPC_CONFIG.customBgUrl,
       expressions: {
         normal: parsed.expressions?.normal || DEFAULT_NPC_CONFIG.expressions.normal,
         happy: parsed.expressions?.happy || DEFAULT_NPC_CONFIG.expressions.happy,

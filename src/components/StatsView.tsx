@@ -788,7 +788,7 @@ export const StatsView: React.FC = () => {
       {/* 3. Time Share Analysis: Donut Chart (Left) + Task Ranking Breakdown (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left: SVG Donut Chart & Dimension Switcher (5 cols) */}
-        <div className="lg:col-span-5 guild-card border p-4 sm:p-5 rounded-2xl shadow-xs flex flex-col justify-between space-y-4 min-w-0">
+        <div className="lg:col-span-5 guild-card border p-4 sm:p-5 rounded-2xl shadow-xs flex flex-col space-y-4 min-w-0">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <h3 className="text-sm font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
@@ -952,7 +952,7 @@ export const StatsView: React.FC = () => {
         </div>
 
         {/* Right: Task Time Share & Ranking List (7 cols) */}
-        <div className="lg:col-span-7 guild-card border p-4 sm:p-5 rounded-2xl shadow-xs flex flex-col justify-between space-y-4 min-w-0">
+        <div className="lg:col-span-7 guild-card border p-4 sm:p-5 rounded-2xl shadow-xs flex flex-col space-y-4 min-w-0">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <h3 className="text-sm font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
@@ -969,7 +969,7 @@ export const StatsView: React.FC = () => {
           </div>
 
           {taskBreakdown.length > 0 ? (
-            <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+            <div className="space-y-2.5 flex-1 min-h-0 max-h-[520px] overflow-y-auto pr-1">
               {taskBreakdown.map((item, idx) => {
                 const statusCfg = TASK_STATUS_CONFIG[item.task.status];
                 const totalCumulativeHours = getTaskTotalHours(item.task.id);
