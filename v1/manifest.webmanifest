@@ -1,0 +1,17 @@
+{
+  "name": "个人数字媒体与任务时序跟踪系统",
+  "short_name": "Tracker",
+  "description": "融合看板流转与微观时序甘特的轻量化个人数字媒体与任务进度跟踪系统",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#18181b",
+  "theme_color": "#18181b",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
+
