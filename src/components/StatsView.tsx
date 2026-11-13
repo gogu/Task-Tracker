@@ -483,17 +483,17 @@ export const StatsView: React.FC = () => {
   const hoveredSlice = donutSlices.find((s) => s.id === hoveredSliceId) || null;
 
   return (
-    <div className="space-y-4 pb-8">
+    <div className="space-y-4 pb-6 w-full min-w-0 overflow-x-hidden">
       {/* 1. Top Control Bar: Period Switcher & Date Navigation */}
-      <div className="bg-white dark:bg-zinc-900 p-3.5 sm:p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="guild-surface border p-3.5 sm:p-4 rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {/* Left: Period Dimension Switcher (日 / 周 / 月) */}
         <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="inline-flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200/70 dark:border-zinc-700/60">
+          <div className="inline-flex items-center bg-amber-900/10 dark:bg-black/30 p-1 rounded-xl border border-amber-800/20 dark:border-amber-700/30">
             {(
               [
-                { key: 'day', label: '日统计' },
-                { key: 'week', label: '周统计' },
-                { key: 'month', label: '月统计' },
+                { key: 'day', label: '日卷宗' },
+                { key: 'week', label: '周卷宗' },
+                { key: 'month', label: '月卷宗' },
               ] as { key: StatsPeriod; label: string }[]
             ).map((tab) => {
               const active = period === tab.key;
@@ -505,10 +505,10 @@ export const StatsView: React.FC = () => {
                     setPeriod(tab.key);
                     setSelectedDrillDate(null);
                   }}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     active
-                      ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                      ? 'bg-amber-600 text-white shadow-2xs'
+                      : 'text-stone-700 dark:text-stone-300 hover:text-amber-950 dark:hover:text-amber-100'
                   }`}
                 >
                   {tab.label}
@@ -519,7 +519,7 @@ export const StatsView: React.FC = () => {
 
           {/* Active Global Filter Pill */}
           {(selectedTag || searchQuery.trim()) && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-800/70 text-xs text-blue-700 dark:text-blue-300">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/60 border border-amber-400/50 dark:border-amber-700/60 text-xs text-amber-900 dark:text-amber-200">
               <Filter className="w-3 h-3 shrink-0" />
               <span>
                 已过滤:
@@ -532,7 +532,7 @@ export const StatsView: React.FC = () => {
                   setSelectedTag(null);
                   setSearchQuery('');
                 }}
-                className="ml-0.5 p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900 rounded cursor-pointer"
+                className="ml-0.5 p-0.5 hover:bg-amber-200/70 dark:hover:bg-amber-900 rounded cursor-pointer"
                 title="清除筛选条件"
               >
                 <X className="w-3 h-3" />
@@ -542,19 +542,19 @@ export const StatsView: React.FC = () => {
         </div>
 
         {/* Right: Date Range Navigator */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <div className="flex items-center bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/70 rounded-xl p-1">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <div className="flex items-center bg-white/70 dark:bg-black/30 border border-amber-800/20 dark:border-amber-700/35 rounded-xl p-1">
             <button
               type="button"
               onClick={handlePrev}
-              className="p-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-colors cursor-pointer"
+              className="p-1.5 text-amber-900 dark:text-amber-200 hover:bg-amber-900/10 dark:hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
               title={period === 'day' ? '前一天' : period === 'week' ? '上一周' : '上一月'}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            <div className="relative px-3 py-1 flex items-center gap-1.5 text-xs sm:text-sm font-bold text-zinc-800 dark:text-zinc-100 select-none">
-              <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <div className="relative px-3 py-1 flex items-center gap-1.5 text-xs sm:text-sm font-extrabold text-amber-950 dark:text-amber-100 select-none">
+              <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
               <span>{formatPeriodLabel(period, pivotDate)}</span>
               <input
                 type="date"
@@ -573,7 +573,7 @@ export const StatsView: React.FC = () => {
             <button
               type="button"
               onClick={handleNext}
-              className="p-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-colors cursor-pointer"
+              className="p-1.5 text-amber-900 dark:text-amber-200 hover:bg-amber-900/10 dark:hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
               title={period === 'day' ? '后一天' : period === 'week' ? '下一周' : '下一月'}
             >
               <ChevronRight className="w-4 h-4" />
@@ -584,7 +584,7 @@ export const StatsView: React.FC = () => {
             <button
               type="button"
               onClick={handleResetToday}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200/70 dark:border-blue-800/60 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 shadow-2xs transition-colors cursor-pointer"
             >
               回到今天
             </button>
@@ -595,18 +595,18 @@ export const StatsView: React.FC = () => {
       {/* 2. KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         {/* Card 1: Recorded Time */}
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs flex flex-col justify-between">
+        <div className="guild-card border p-4 rounded-2xl shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-              {period === 'day' ? '当日记录时间' : period === 'week' ? '本周记录总时间' : '本月记录总时间'}
+            <span className="text-xs font-bold text-amber-900/75 dark:text-amber-200/80">
+              {period === 'day' ? '当日冒险投入' : period === 'week' ? '本周累计投入' : '本月累计投入'}
             </span>
-            <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300/60 dark:border-amber-800 flex items-center justify-center">
               <Clock className="w-4 h-4" />
             </div>
           </div>
 
-          <div className="my-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">
+          <div className="my-2 flex items-baseline gap-2 flex-wrap">
+            <span className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
               {formatHours(metrics.totalHours)}
             </span>
             {period === 'day' && metrics.prevDayDiffHours !== null && (
@@ -616,7 +616,7 @@ export const StatsView: React.FC = () => {
                     ? 'text-emerald-600 dark:text-emerald-400'
                     : metrics.prevDayDiffHours < 0
                       ? 'text-amber-600 dark:text-amber-400'
-                      : 'text-zinc-400'
+                      : 'text-stone-400'
                 }`}
               >
                 {metrics.prevDayDiffHours > 0
@@ -628,81 +628,80 @@ export const StatsView: React.FC = () => {
             )}
           </div>
 
-          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
             {period === 'day' ? (
               <>
-                <span>涉及任务: <strong className="text-zinc-700 dark:text-zinc-200">{taskBreakdown.length} 项</strong></span>
-                <span>打卡记录: <strong className="text-zinc-700 dark:text-zinc-200">{metrics.totalLogCount} 条</strong></span>
+                <span>涉及委托: <strong className="text-stone-800 dark:text-amber-100">{taskBreakdown.length} 项</strong></span>
+                <span>打卡记录: <strong className="text-stone-800 dark:text-amber-100">{metrics.totalLogCount} 条</strong></span>
               </>
             ) : (
               <>
-                <span>日均: <strong className="text-zinc-700 dark:text-zinc-200">{formatHours(metrics.avgDailyHours)}</strong></span>
-                <span>活跃日均: <strong className="text-blue-600 dark:text-blue-400">{formatHours(metrics.avgActiveDayHours)}</strong></span>
+                <span>日均: <strong className="text-stone-800 dark:text-amber-100">{formatHours(metrics.avgDailyHours)}</strong></span>
+                <span>活跃日均: <strong className="text-amber-700 dark:text-amber-300">{formatHours(metrics.avgActiveDayHours)}</strong></span>
               </>
             )}
           </div>
         </div>
 
         {/* Card 2: Completed Task Time Ratio */}
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs flex flex-col justify-between">
+        <div className="guild-card border p-4 rounded-2xl shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-              完成任务时间占比
+            <span className="text-xs font-bold text-amber-900/75 dark:text-amber-200/80">
+              已达成委托时长占比
             </span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300/60 dark:border-emerald-800 flex items-center justify-center">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
 
           <div className="my-2">
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight">
                 {metrics.completedRatio.toFixed(1)}%
               </span>
-              <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              <span className="text-xs font-medium text-stone-500 dark:text-stone-400">
                 ({formatHours(metrics.completedHours)} / {formatHours(metrics.totalHours)})
               </span>
             </div>
-            {/* Dual-color progress bar */}
-            <div className="mt-2 h-2 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex">
+            <div className="mt-2 h-2 w-full rounded-full bg-amber-900/10 dark:bg-black/40 overflow-hidden flex">
               {metrics.totalHours > 0 ? (
                 <>
                   <div
                     className="h-full bg-emerald-500 transition-all duration-300"
                     style={{ width: `${metrics.completedRatio}%` }}
-                    title={`已完成任务耗时: ${formatHours(metrics.completedHours)}`}
+                    title={`已达成委托耗时: ${formatHours(metrics.completedHours)}`}
                   />
                   <div
                     className="h-full bg-blue-500 transition-all duration-300"
                     style={{ width: `${Math.max(0, 100 - metrics.completedRatio)}%` }}
-                    title={`进行中/其他任务耗时: ${formatHours(metrics.otherHours)}`}
+                    title={`攻略中/其他委托耗时: ${formatHours(metrics.otherHours)}`}
                   />
                 </>
               ) : (
-                <div className="h-full w-full bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-full w-full bg-amber-900/10 dark:bg-stone-800" />
               )}
             </div>
           </div>
 
-          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-              已完成: <strong className="text-zinc-700 dark:text-zinc-200">{formatHours(metrics.completedHours)}</strong>
+              已达成: <strong className="text-stone-800 dark:text-amber-100">{formatHours(metrics.completedHours)}</strong>
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-              进行中: <strong className="text-zinc-700 dark:text-zinc-200">{formatHours(metrics.otherHours)}</strong>
+              攻略中: <strong className="text-stone-800 dark:text-amber-100">{formatHours(metrics.otherHours)}</strong>
             </span>
           </div>
         </div>
 
         {/* Card 3: Top Task Concentration */}
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs flex flex-col justify-between">
+        <div className="guild-card border p-4 rounded-2xl shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-              头号投入任务占比
+            <span className="text-xs font-bold text-amber-900/75 dark:text-amber-200/80">
+              头号主打委托占比
             </span>
-            <div className="w-8 h-8 rounded-xl bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-400 border border-violet-300/60 dark:border-violet-800 flex items-center justify-center">
               <Trophy className="w-4 h-4" />
             </div>
           </div>
@@ -711,7 +710,7 @@ export const StatsView: React.FC = () => {
             <>
               <div className="my-2">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">
+                  <span className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
                     {topTask.percentage.toFixed(1)}%
                   </span>
                   <span className="text-xs font-semibold text-violet-600 dark:text-violet-400">
@@ -720,57 +719,57 @@ export const StatsView: React.FC = () => {
                 </div>
                 <p
                   onClick={() => openTaskDetail(topTask.task.id)}
-                  className="mt-1 text-xs font-semibold text-zinc-700 dark:text-zinc-200 truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                  className="mt-1 text-xs font-bold text-stone-700 dark:text-amber-100 truncate cursor-pointer hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
                   title={topTask.task.title}
                 >
                   {topTask.task.title}
                 </p>
               </div>
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
-                <span>主分类: <strong className="text-zinc-700 dark:text-zinc-200">{topTask.task.tags[0] || '未分类'}</strong></span>
-                <span>当期打卡: <strong className="text-zinc-700 dark:text-zinc-200">{topTask.logCount} 次</strong></span>
+              <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
+                <span>主分类: <strong className="text-stone-800 dark:text-amber-100">{topTask.task.tags[0] || '未分类'}</strong></span>
+                <span>当期打卡: <strong className="text-stone-800 dark:text-amber-100">{topTask.logCount} 次</strong></span>
               </div>
             </>
           ) : (
             <>
               <div className="my-2">
-                <span className="text-2xl font-bold text-zinc-400 dark:text-zinc-600">--</span>
-                <p className="mt-1 text-xs text-zinc-400">当期尚无记录时长的任务</p>
+                <span className="text-2xl font-bold text-stone-400 dark:text-stone-600">--</span>
+                <p className="mt-1 text-xs text-stone-400">当期尚无记录时长的委托</p>
               </div>
-              <div className="text-[11px] text-zinc-400 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
-                在打卡弹窗中填写小时数即可生成占比
+              <div className="text-[11px] text-stone-400 pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
+                在打卡汇报中填写小时数即可生成占比
               </div>
             </>
           )}
         </div>
 
         {/* Card 4: Check-in Activity & Completions */}
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs flex flex-col justify-between">
+        <div className="guild-card border p-4 rounded-2xl shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-              有效推进与完结
+            <span className="text-xs font-bold text-amber-900/75 dark:text-amber-200/80">
+              有效推进与达成
             </span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 border border-orange-300/60 dark:border-orange-800 flex items-center justify-center">
               <Flame className="w-4 h-4" />
             </div>
           </div>
 
-          <div className="my-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">
+          <div className="my-2 flex items-baseline gap-2 flex-wrap">
+            <span className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
               {metrics.progressLogCount}
-              <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 ml-1">次推进</span>
+              <span className="text-sm font-semibold text-stone-500 dark:text-stone-400 ml-1">次推进</span>
             </span>
             {metrics.completedTasksCount > 0 && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
-                已完结 {metrics.completedTasksCount} 项
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800">
+                已达成 {metrics.completedTasksCount} 项
               </span>
             )}
           </div>
 
-          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
             <span>
               活跃天数:{' '}
-              <strong className="text-zinc-700 dark:text-zinc-200">
+              <strong className="text-stone-800 dark:text-amber-100">
                 {metrics.activeDaysCount} / {metrics.totalDaysCount} 天
               </strong>
             </span>
@@ -789,24 +788,24 @@ export const StatsView: React.FC = () => {
       {/* 3. Time Share Analysis: Donut Chart (Left) + Task Ranking Breakdown (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left: SVG Donut Chart & Dimension Switcher (5 cols) */}
-        <div className="lg:col-span-5 bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4">
+        <div className="lg:col-span-5 guild-card border p-4 sm:p-5 rounded-2xl shadow-xs flex flex-col justify-between space-y-4 min-w-0">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
-              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <PieChart className="w-4 h-4 text-blue-500" />
+              <h3 className="text-sm font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
+                <PieChart className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span>时间占比分布</span>
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
                 多维度拆解当期记录时间的投入构成
               </p>
             </div>
 
             {/* Dimension Switcher */}
-            <div className="inline-flex items-center bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-lg border border-zinc-200/70 dark:border-zinc-700/60 text-[11px]">
+            <div className="inline-flex items-center bg-amber-900/10 dark:bg-black/30 p-0.5 rounded-lg border border-amber-800/20 text-[11px]">
               {(
                 [
-                  { key: 'task', label: '按任务' },
-                  { key: 'status', label: '按完成状态' },
+                  { key: 'task', label: '按委托' },
+                  { key: 'status', label: '按状态' },
                   { key: 'tag', label: '按标签' },
                 ] as { key: ShareDimension; label: string }[]
               ).map((tab) => (
@@ -817,10 +816,10 @@ export const StatsView: React.FC = () => {
                     setShareDimension(tab.key);
                     setHoveredSliceId(null);
                   }}
-                  className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
                     shareDimension === tab.key
-                      ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                      ? 'bg-amber-600 text-white shadow-2xs'
+                      : 'text-stone-700 dark:text-stone-300 hover:text-amber-950 dark:hover:text-amber-100'
                   }`}
                 >
                   {tab.label}
@@ -832,7 +831,7 @@ export const StatsView: React.FC = () => {
           {/* SVG Donut Chart */}
           {donutSlices.length > 0 ? (
             <div className="flex flex-col items-center justify-center py-2">
-              <div className="relative w-52 h-52 flex items-center justify-center">
+              <div className="relative w-48 h-48 sm:w-52 sm:h-52 flex items-center justify-center">
                 <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90">
                   {(() => {
                     const radius = 74;
@@ -869,26 +868,26 @@ export const StatsView: React.FC = () => {
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                   {hoveredSlice ? (
                     <>
-                      <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 line-clamp-1 max-w-[120px]">
+                      <span className="text-[11px] font-semibold text-stone-500 dark:text-stone-400 line-clamp-1 max-w-[120px]">
                         {hoveredSlice.label}
                       </span>
-                      <span className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 mt-0.5">
+                      <span className="text-xl font-extrabold text-stone-900 dark:text-amber-50 mt-0.5">
                         {hoveredSlice.percentage.toFixed(1)}%
                       </span>
-                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                      <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
                         {formatHours(hoveredSlice.hours)}
                       </span>
                     </>
                   ) : (
                     <>
-                      <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+                      <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500">
                         {period === 'day' ? '当日总计' : period === 'week' ? '本周总计' : '本月总计'}
                       </span>
-                      <span className="text-2xl font-extrabold text-zinc-900 dark:text-zinc-100 mt-0.5">
+                      <span className="text-2xl font-extrabold text-stone-900 dark:text-amber-50 mt-0.5">
                         {formatHours(metrics.totalHours)}
                       </span>
                       <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                        完成占 {metrics.completedRatio.toFixed(0)}%
+                        达成占 {metrics.completedRatio.toFixed(0)}%
                       </span>
                     </>
                   )}
@@ -906,8 +905,8 @@ export const StatsView: React.FC = () => {
                       onMouseLeave={() => setHoveredSliceId(null)}
                       className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition-colors cursor-default ${
                         isHovered
-                          ? 'bg-zinc-100 dark:bg-zinc-800/90'
-                          : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'
+                          ? 'bg-amber-900/10 dark:bg-white/10'
+                          : 'hover:bg-amber-900/5 dark:hover:bg-white/5'
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -915,20 +914,20 @@ export const StatsView: React.FC = () => {
                           className="w-2.5 h-2.5 rounded-full shrink-0"
                           style={{ backgroundColor: slice.color }}
                         />
-                        <span className="font-semibold text-zinc-800 dark:text-zinc-200 truncate">
+                        <span className="font-semibold text-stone-800 dark:text-amber-50 truncate">
                           {slice.label}
                         </span>
                         {slice.subLabel && (
-                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 shrink-0">
+                          <span className="text-[10px] text-stone-400 dark:text-stone-500 shrink-0">
                             ({slice.subLabel})
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2.5 shrink-0 ml-2">
-                        <span className="font-bold text-zinc-700 dark:text-zinc-200">
+                        <span className="font-bold text-stone-700 dark:text-amber-100">
                           {formatHours(slice.hours)}
                         </span>
-                        <span className="w-12 text-right font-semibold text-zinc-500 dark:text-zinc-400">
+                        <span className="w-12 text-right font-semibold text-stone-500 dark:text-stone-400">
                           {slice.percentage.toFixed(1)}%
                         </span>
                       </div>
@@ -939,33 +938,33 @@ export const StatsView: React.FC = () => {
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center py-12 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-900/10 dark:bg-stone-800 text-amber-700/60 dark:text-amber-300/60 flex items-center justify-center mb-3">
                 <PieChart className="w-6 h-6" />
               </div>
-              <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              <p className="text-sm font-bold text-stone-700 dark:text-amber-100">
                 当前周期暂无时长记录
               </p>
-              <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 max-w-xs">
-                在任务打卡时填写「投入时间（小时）」，即可在此查看各任务、标签及完成状态的时间占比分析
+              <p className="text-xs text-stone-400 dark:text-stone-500 mt-1 max-w-xs">
+                向看板娘汇报打卡时填写「投入时长」，即可在此查看各委托、标签及状态的时间占比分析
               </p>
             </div>
           )}
         </div>
 
         {/* Right: Task Time Share & Ranking List (7 cols) */}
-        <div className="lg:col-span-7 bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between gap-2">
+        <div className="lg:col-span-7 guild-card border p-4 sm:p-5 rounded-2xl shadow-xs flex flex-col justify-between space-y-4 min-w-0">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
-              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+              <h3 className="text-sm font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
                 <Trophy className="w-4 h-4 text-amber-500" />
-                <span>当期任务耗时排行与占比</span>
+                <span>当期委托战绩排行</span>
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                按当前{period === 'day' ? '日' : period === 'week' ? '周' : '月'}累计投入时间排序，点击任务查看完整详情或快速打卡
+              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                按当前{period === 'day' ? '日' : period === 'week' ? '周' : '月'}累计投入时间排序，点击委托查看完整档案
               </p>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-              共 {taskBreakdown.length} 项活跃任务
+            <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-900/10 dark:bg-black/30 text-amber-900 dark:text-amber-200 border border-amber-800/15">
+              共 {taskBreakdown.length} 项活跃委托
             </span>
           </div>
 
@@ -979,20 +978,19 @@ export const StatsView: React.FC = () => {
                   <div
                     key={item.task.id}
                     onClick={() => openTaskDetail(item.task.id)}
-                    className="group p-3 rounded-xl border border-zinc-200/70 dark:border-zinc-800 hover:border-blue-400/60 dark:hover:border-blue-500/50 bg-zinc-50/40 dark:bg-zinc-800/20 hover:bg-white dark:hover:bg-zinc-800/60 transition-all cursor-pointer"
+                    className="group p-3 rounded-xl border border-amber-800/20 dark:border-amber-700/30 hover:border-amber-500 dark:hover:border-amber-400 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/35 transition-all cursor-pointer"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      {/* Rank + Task Info */}
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <span
                           className={`w-6 h-6 rounded-lg text-xs font-extrabold flex items-center justify-center shrink-0 ${
                             idx === 0
-                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300'
+                              ? 'bg-amber-200 text-amber-900 dark:bg-amber-500/30 dark:text-amber-200'
                               : idx === 1
-                                ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                ? 'bg-stone-200 text-stone-700 dark:bg-stone-700 dark:text-stone-200'
                                 : idx === 2
-                                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-950/80 dark:text-orange-300'
-                                  : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                                  ? 'bg-orange-200 text-orange-800 dark:bg-orange-950/80 dark:text-orange-300'
+                                  : 'bg-amber-900/10 text-stone-500 dark:bg-stone-800 dark:text-stone-400'
                           }`}
                         >
                           {idx + 1}
@@ -1000,7 +998,7 @@ export const StatsView: React.FC = () => {
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            <span className="text-sm font-bold text-stone-900 dark:text-amber-50 truncate group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors">
                               {item.task.title}
                             </span>
                             <span
@@ -1009,14 +1007,14 @@ export const StatsView: React.FC = () => {
                               {statusCfg.label}
                             </span>
                             {item.task.tags[0] && (
-                              <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium shrink-0">
+                              <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-900/10 dark:bg-white/10 text-stone-600 dark:text-stone-300 font-medium shrink-0">
                                 <Tag className="w-2.5 h-2.5 opacity-60" />
                                 {item.task.tags[0]}
                               </span>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-3 mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          <div className="flex items-center gap-2 sm:gap-3 mt-1 text-[11px] text-stone-500 dark:text-stone-400 flex-wrap">
                             <span>当期打卡 {item.logCount} 次</span>
                             <span>·</span>
                             <span>历史累计 {formatHours(totalCumulativeHours)}</span>
@@ -1032,13 +1030,12 @@ export const StatsView: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Right: Hours, Percentage & Quick Check-in Button */}
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                         <div className="text-right">
-                          <div className="text-sm font-extrabold text-zinc-900 dark:text-zinc-100">
+                          <div className="text-sm font-extrabold text-stone-900 dark:text-amber-50">
                             {formatHours(item.hours)}
                           </div>
-                          <div className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                          <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                             {item.percentage.toFixed(1)}%
                           </div>
                         </div>
@@ -1049,7 +1046,7 @@ export const StatsView: React.FC = () => {
                             e.stopPropagation();
                             openCheckInModal(item.task, activeDetailDate);
                           }}
-                          className="p-2 rounded-lg text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
+                          className="p-2 rounded-lg text-stone-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-500/15 transition-colors cursor-pointer"
                           title={`打卡 / 编辑 ${activeDetailDate} 记录`}
                         >
                           <Edit3 className="w-4 h-4" />
@@ -1057,8 +1054,7 @@ export const StatsView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Progress bar */}
-                    <div className="mt-2.5 h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                    <div className="mt-2.5 h-1.5 w-full rounded-full bg-amber-900/10 dark:bg-black/35 overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all duration-300"
                         style={{
@@ -1073,58 +1069,54 @@ export const StatsView: React.FC = () => {
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center py-12 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-900/10 dark:bg-stone-800 text-amber-700/60 dark:text-amber-300/60 flex items-center justify-center mb-3">
                 <Sparkles className="w-6 h-6" />
               </div>
-              <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                当前周期暂无打卡任务
+              <p className="text-sm font-bold text-stone-700 dark:text-amber-100">
+                当前周期暂无打卡委托
               </p>
-              <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
-                可切换日期范围或在看板/甘特视图中对任务进行每日打卡
+              <p className="text-xs text-stone-400 dark:text-stone-500 mt-1">
+                可切换日期范围或向看板娘汇报每日打卡进度
               </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* 4. Daily Recorded Time Bar Chart (Shown in Week & Month views) */}
+      {/* 4. Daily Recorded Time Bar Chart (Shown in Week & Month views) — 100% Width-Adaptive, Zero Horizontal Scrollbar */}
       {period !== 'day' && (
-        <div className="bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs space-y-4">
+        <div className="guild-card border p-4 sm:p-5 rounded-2xl shadow-xs space-y-4 w-full min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-blue-500" />
-                <span>{period === 'week' ? '本周每日记录时间趋势' : '本月每日记录时间趋势'}</span>
+              <h3 className="text-sm font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span>{period === 'week' ? '本周每日冒险投入趋势' : '本月每日冒险投入趋势'}</span>
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                点击任意柱状图可下钻查看当日打卡明细与当日任务耗时占比
+              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                点击任意柱状图可下钻查看当日打卡明细与当日委托耗时占比
               </p>
             </div>
 
-            {/* Legend */}
-            <div className="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center gap-4 text-xs text-stone-500 dark:text-stone-400">
               <span className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500 inline-block" />
-                <span>已完成任务时长</span>
+                <span>已达成委托时长</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-xs bg-blue-500 inline-block" />
-                <span>进行中/其他时长</span>
+                <span>攻略中/其他时长</span>
               </span>
             </div>
           </div>
 
-          {/* Bar Chart Container */}
-          <div className="pt-4 pb-1 px-1 overflow-x-auto no-scrollbar">
+          <div className="pt-3 pb-1 w-full overflow-x-hidden">
             <div
-              className={`grid items-end gap-1.5 sm:gap-2 min-h-[180px] ${
-                period === 'week' ? 'grid-cols-7 min-w-[420px]' : 'min-w-[680px]'
+              className={`grid items-end min-h-[175px] w-full ${
+                period === 'week' ? 'gap-1.5 sm:gap-2' : 'gap-0.5 sm:gap-1'
               }`}
-              style={
-                period === 'month'
-                  ? { gridTemplateColumns: `repeat(${dailySeries.series.length}, minmax(18px, 1fr))` }
-                  : undefined
-              }
+              style={{
+                gridTemplateColumns: `repeat(${dailySeries.series.length}, minmax(0, 1fr))`,
+              }}
             >
               {dailySeries.series.map((dayItem) => {
                 const isSelected = activeDetailDate === dayItem.date;
@@ -1145,45 +1137,41 @@ export const StatsView: React.FC = () => {
                     onClick={() =>
                       setSelectedDrillDate((prev) => (prev === dayItem.date ? null : dayItem.date))
                     }
-                    className={`group flex flex-col items-center justify-end h-44 rounded-xl p-1 border transition-all cursor-pointer ${
+                    className={`min-w-0 group flex flex-col items-center justify-end h-44 rounded-xl p-0.5 sm:p-1 border transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-blue-50/90 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800'
-                        : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                        ? 'bg-amber-500/15 dark:bg-amber-500/20 border-amber-500/60'
+                        : 'border-transparent hover:bg-amber-900/5 dark:hover:bg-white/5'
                     }`}
                     title={`${dayItem.date} (${getWeekdayChinese(dayItem.date)})\n当日总时长: ${formatHours(
                       dayItem.totalHours
-                    )}\n已完成任务: ${formatHours(dayItem.completedHours)}\n进行中/其他: ${formatHours(
+                    )}\n已达成委托: ${formatHours(dayItem.completedHours)}\n攻略中/其他: ${formatHours(
                       dayItem.otherHours
                     )}\n打卡数: ${dayItem.logCount} 次`}
                   >
-                    {/* Top value label */}
                     <span
-                      className={`text-[10px] font-semibold mb-1 transition-opacity ${
+                      className={`text-[8px] sm:text-[10px] font-semibold mb-1 truncate max-w-full ${
                         dayItem.totalHours > 0
                           ? isSelected
-                            ? 'text-blue-600 dark:text-blue-400 opacity-100'
-                            : 'text-zinc-600 dark:text-zinc-400 opacity-90'
+                            ? 'text-amber-700 dark:text-amber-300 opacity-100'
+                            : 'text-stone-600 dark:text-stone-300 opacity-90'
                           : 'opacity-0'
                       }`}
                     >
                       {dayItem.totalHours > 0 ? `${dayItem.totalHours.toFixed(1)}` : ''}
                     </span>
 
-                    {/* Bar track */}
-                    <div className="w-full max-w-[36px] flex-1 flex items-end justify-center">
+                    <div className="w-full max-w-[32px] flex-1 flex items-end justify-center">
                       {dayItem.totalHours > 0 ? (
                         <div
                           className="w-full rounded-t-md overflow-hidden flex flex-col justify-end transition-all duration-300 shadow-2xs"
                           style={{ height: `${heightPct}%` }}
                         >
-                          {/* Top segment: other / in_progress hours */}
                           {dayItem.otherHours > 0 && (
                             <div
                               className="w-full bg-blue-500 group-hover:bg-blue-600 transition-colors"
                               style={{ height: `${100 - completedPctOfBar}%` }}
                             />
                           )}
-                          {/* Bottom segment: completed task hours */}
                           {dayItem.completedHours > 0 && (
                             <div
                               className="w-full bg-emerald-500 group-hover:bg-emerald-600 transition-colors"
@@ -1192,27 +1180,26 @@ export const StatsView: React.FC = () => {
                           )}
                         </div>
                       ) : (
-                        <div className="w-full h-1 rounded-full bg-zinc-200/70 dark:bg-zinc-800" />
+                        <div className="w-full h-1 rounded-full bg-amber-900/15 dark:bg-stone-800" />
                       )}
                     </div>
 
-                    {/* X-axis label */}
-                    <div className="mt-1.5 flex flex-col items-center leading-tight">
+                    <div className="mt-1.5 flex flex-col items-center leading-tight min-w-0 max-w-full">
                       <span
-                        className={`text-[11px] font-bold ${
+                        className={`text-[9px] sm:text-[11px] font-bold truncate ${
                           isToday
-                            ? 'text-blue-600 dark:text-blue-400'
+                            ? 'text-amber-700 dark:text-amber-300'
                             : isSelected
-                              ? 'text-zinc-900 dark:text-zinc-100'
+                              ? 'text-stone-900 dark:text-amber-50'
                               : weekend
                                 ? 'text-amber-600/80 dark:text-amber-400/80'
-                                : 'text-zinc-600 dark:text-zinc-400'
+                                : 'text-stone-600 dark:text-stone-400'
                         }`}
                       >
                         {period === 'week' ? getWeekdayChinese(dayItem.date) : dayNum}
                       </span>
                       {period === 'week' && (
-                        <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                        <span className="text-[9px] sm:text-[10px] text-stone-400 dark:text-stone-500">
                           {dayItem.date.slice(5)}
                         </span>
                       )}
@@ -1226,20 +1213,20 @@ export const StatsView: React.FC = () => {
       )}
 
       {/* 5. Daily Check-in Log Details (当日打卡记录与时间明细) */}
-      <div className="bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs space-y-4">
+      <div className="guild-card border p-4 sm:p-5 rounded-2xl shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-500" />
+            <h3 className="text-sm font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span>
                 {activeDateDetail.date} ({getWeekdayChinese(activeDateDetail.date)}) 当日打卡时间明细
               </span>
             </h3>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800">
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200 border border-amber-300/70 dark:border-amber-800">
               当日记录时间: {formatHours(activeDateDetail.dayTotalHours)}
             </span>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
-              当日完成任务占比: {activeDateDetail.dayCompletedRatio.toFixed(1)}%
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/70 dark:border-emerald-800">
+              当日达成占比: {activeDateDetail.dayCompletedRatio.toFixed(1)}%
             </span>
           </div>
 
@@ -1251,7 +1238,7 @@ export const StatsView: React.FC = () => {
                 setPivotDate(activeDateDetail.date);
                 setSelectedDrillDate(null);
               }}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer self-start sm:self-auto"
+              className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline cursor-pointer self-start sm:self-auto"
             >
               <span>切换至该日独立视图</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
@@ -1261,7 +1248,7 @@ export const StatsView: React.FC = () => {
 
         {activeDateDetail.items.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {activeDateDetail.items.map(({ log, task, hours, isComp }) => {
+            {activeDateDetail.items.map(({ log, task, hours }) => {
               const progressCfg = PROGRESS_TYPE_CONFIG[log.progressType];
               const statusCfg = TASK_STATUS_CONFIG[task.status];
               const daySharePct =
@@ -1273,7 +1260,7 @@ export const StatsView: React.FC = () => {
                 <div
                   key={log.id}
                   onClick={() => openCheckInModal(task, log.date)}
-                  className="group p-3.5 rounded-xl border border-zinc-200/80 dark:border-zinc-800 hover:border-blue-400/60 dark:hover:border-blue-500/50 bg-zinc-50/50 dark:bg-zinc-800/30 hover:bg-white dark:hover:bg-zinc-800/70 transition-all cursor-pointer flex flex-col justify-between gap-2.5"
+                  className="group p-3.5 rounded-xl border border-amber-800/20 dark:border-amber-700/30 hover:border-amber-500 dark:hover:border-amber-400 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/35 transition-all cursor-pointer flex flex-col justify-between gap-2.5"
                 >
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
@@ -1288,34 +1275,34 @@ export const StatsView: React.FC = () => {
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-0.5">
-                      <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                      <h4 className="text-sm font-bold text-stone-900 dark:text-amber-50 truncate group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors">
                         {task.title}
                       </h4>
                     </div>
 
                     {log.note ? (
-                      <p className="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 bg-white/80 dark:bg-zinc-900/60 p-2 rounded-lg border border-zinc-200/50 dark:border-zinc-800">
+                      <p className="text-xs text-stone-600 dark:text-stone-300 line-clamp-2 bg-amber-900/5 dark:bg-black/30 p-2 rounded-lg border border-amber-800/10 dark:border-amber-700/20">
                         {log.note}
                       </p>
                     ) : (
-                      <p className="text-xs text-zinc-400 italic">无备注说明</p>
+                      <p className="text-xs text-stone-400 italic">无备注说明</p>
                     )}
                   </div>
 
-                  <div className="pt-2 border-t border-zinc-200/60 dark:border-zinc-800 flex items-center justify-between text-xs">
+                  <div className="pt-2 border-t border-amber-800/15 dark:border-amber-700/25 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-blue-500" />
-                      <span className="font-bold text-zinc-800 dark:text-zinc-100">
+                      <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span className="font-bold text-stone-800 dark:text-amber-50">
                         {formatHours(hours)}
                       </span>
                       {hours > 0 && (
-                        <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <span className="text-[11px] text-stone-500 dark:text-stone-400">
                           (占当日 {daySharePct.toFixed(1)}%)
                         </span>
                       )}
                     </div>
 
-                    <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                    <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
                       <Edit3 className="w-3 h-3" />
                       编辑打卡
                     </span>
@@ -1325,7 +1312,7 @@ export const StatsView: React.FC = () => {
             })}
           </div>
         ) : (
-          <div className="py-8 text-center text-xs text-zinc-400 dark:text-zinc-500">
+          <div className="py-8 text-center text-xs text-stone-400 dark:text-stone-500">
             {activeDateDetail.date} 当日暂无打卡记录
           </div>
         )}

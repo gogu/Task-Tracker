@@ -79,39 +79,43 @@ export function getGanttDateWindow(
   const today = pivotDate;
   
   if (range === 'week') {
-    // Show 14 days around today (e.g. past 10 days + next 3 days)
-    const startDate = addDays(today, -11);
+    // Show 10 days around pivotDate (7 past + pivot + 2 next) so columns fit 100% width with zero horizontal overflow
+    const startDate = addDays(today, -7);
     const endDate = addDays(today, 2);
     return { startDate, endDate, dates: generateDateRange(startDate, endDate) };
   }
 
   if (range === 'month') {
-    // Show 35 days (past 28 days + next 6 days)
-    const startDate = addDays(today, -28);
-    const endDate = addDays(today, 6);
+    // Show 21 days around pivotDate (16 past + pivot + 4 next)
+    const startDate = addDays(today, -16);
+    const endDate = addDays(today, 4);
     return { startDate, endDate, dates: generateDateRange(startDate, endDate) };
   }
 
-  // Range === 'all'
-  // Find minimum start date, or at least 20 days ago
-  const effectiveStart = earliestDate && earliestDate < today 
-    ? addDays(earliestDate, -2) 
-    : addDays(today, -20);
-    
-  const effectiveEnd = latestDate && latestDate > today 
-    ? addDays(latestDate, 2) 
+  // Range === 'all': up to 35 days so all columns fit cleanly without horizontal scrollbars
+  const effectiveStart = earliestDate && earliestDate < today
+    ? addDays(earliestDate, -2)
+    : addDays(today, -24);
+
+  const effectiveEnd = latestDate && latestDate > today
+    ? addDays(latestDate, 2)
     : addDays(today, 3);
 
-  // Guard against runaway ranges (max 180 days for optimal performance)
-  let start = effectiveStart;
-  if (diffInDays(start, effectiveEnd) > 120) {
-    start = addDays(effectiveEnd, -120);
+  const totalSpan = diffInDays(effectiveStart, effectiveEnd) + 1;
+  if (totalSpan > 35) {
+    const start = addDays(today, -27);
+    const end = addDays(today, 7);
+    return {
+      startDate: start,
+      endDate: end,
+      dates: generateDateRange(start, end),
+    };
   }
 
   return {
-    startDate: start,
+    startDate: effectiveStart,
     endDate: effectiveEnd,
-    dates: generateDateRange(start, effectiveEnd),
+    dates: generateDateRange(effectiveStart, effectiveEnd),
   };
 }
 

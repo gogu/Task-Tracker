@@ -33,12 +33,12 @@ export const Toast: React.FC = () => {
               ? 'bg-emerald-50 dark:bg-emerald-950 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
               : isError
               ? 'bg-rose-50 dark:bg-rose-950 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-zinc-200'
-              : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-700'
+              : 'bg-[#221812] text-amber-100 border-amber-500/50'
           }`}
         >
           {isSuccess && <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
           {isError && <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />}
-          {!isSuccess && !isError && <Info className="w-4 h-4 text-blue-400 shrink-0" />}
+          {!isSuccess && !isError && <Info className="w-4 h-4 text-amber-400 shrink-0" />}
           <span>{toast.message}</span>
           {toast.allowUndo && canUndo && (
             <button

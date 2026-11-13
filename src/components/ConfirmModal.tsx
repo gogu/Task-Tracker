@@ -53,14 +53,14 @@ export const ConfirmModal: React.FC = () => {
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+        className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 8 }}
           transition={{ duration: 0.15 }}
-          className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden"
+          className="w-full max-w-md guild-modal-shell rounded-2xl shadow-2xl overflow-hidden overflow-x-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="p-6 space-y-4">
@@ -111,7 +111,7 @@ export const ConfirmModal: React.FC = () => {
                 className={`px-4 py-2 rounded-xl text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer ${
                   isDanger
                     ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800'
-                    : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
+                    : 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800'
                 }`}
               >
                 {confirmText}

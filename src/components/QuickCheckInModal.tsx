@@ -162,18 +162,18 @@ export const QuickCheckInModal: React.FC = () => {
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 8 }}
           transition={{ duration: 0.16 }}
-          className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[90vh]"
+          className="w-full max-w-lg guild-modal-shell rounded-2xl shadow-2xl overflow-hidden overflow-x-hidden flex flex-col max-h-[90vh]"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between bg-zinc-50/70 dark:bg-zinc-900/70 shrink-0">
+          <div className="px-5 py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-start justify-between guild-modal-header shrink-0">
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold">
                 <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
@@ -500,7 +500,7 @@ export const QuickCheckInModal: React.FC = () => {
                 <button
                   type="submit"
                   title="按 Ctrl + Enter 快速提交"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] rounded-xl shadow-xs transition-all cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 active:scale-[0.98] rounded-xl shadow-xs transition-all cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>{existingLogId ? '保存修改' : '保存打卡'}</span>

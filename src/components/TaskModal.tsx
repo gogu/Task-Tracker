@@ -147,21 +147,21 @@ export const TaskModal: React.FC = () => {
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 8 }}
           transition={{ duration: 0.16 }}
-          className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden"
+          className="w-full max-w-lg guild-modal-shell rounded-2xl shadow-2xl overflow-hidden overflow-x-hidden max-h-[92vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Modal Header */}
-          <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-900/50">
+          <div className="px-6 py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-center justify-between guild-modal-header">
             <div className="flex items-center gap-2.5">
               <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100 font-bold text-base">
-                <Bookmark className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <Bookmark className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                 <span>{task ? '编辑任务条目' : '新建跟踪任务'}</span>
               </div>
               {task && getTaskTotalHours(task.id) > 0 && (
@@ -374,7 +374,7 @@ export const TaskModal: React.FC = () => {
                 <button
                   type="submit"
                   title="按 Ctrl + Enter 快速提交"
-                  className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors cursor-pointer"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-colors cursor-pointer"
                 >
                   {task ? '保存更改' : '确认创建'}
                 </button>

@@ -68,21 +68,21 @@ export const TaskDetailDrawer: React.FC = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]"
+            className="absolute inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
             onClick={closeTaskDetail}
           />
 
-          {/* Right-side Drawer */}
+          {/* Right-side Drawer (scoped inside main view area) */}
           <motion.aside
             key="drawer"
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-            className="fixed right-0 top-0 h-full w-[400px] max-w-[92vw] z-50 bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col"
+            className="absolute right-0 top-0 h-full w-[420px] max-w-[92%] z-50 select-text guild-modal-shell border-l border-amber-800/30 dark:border-amber-700/40 shadow-2xl flex flex-col overflow-x-hidden"
           >
             {/* ── Header ── */}
-            <div className="px-5 pt-5 pb-4 border-b border-zinc-100 dark:border-zinc-800 shrink-0 space-y-3">
+            <div className="px-5 pt-5 pb-4 border-b border-amber-800/20 dark:border-amber-700/30 guild-modal-header shrink-0 space-y-3">
               {/* Title row */}
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
@@ -166,7 +166,7 @@ export const TaskDetailDrawer: React.FC = () => {
                     closeTaskDetail();
                     openCheckInModal(task, todayStr);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] rounded-lg transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 active:scale-[0.98] rounded-lg transition-all cursor-pointer"
                 >
                   <PlusCircle className="w-3.5 h-3.5" />
                   今日打卡
