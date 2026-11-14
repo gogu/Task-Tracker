@@ -995,7 +995,7 @@ export const KanbanView: React.FC = () => {
           </nav>
 
           {/* Right: Global Actions, Undo/Redo, Sync & NPC Settings */}
-          <div className="flex items-center flex-wrap gap-1.5">
+          <div className="flex items-center flex-wrap gap-1.5 grow">
             <button
               type="button"
               onClick={() => startCreateTask('in_progress')}
@@ -1104,6 +1104,14 @@ export const KanbanView: React.FC = () => {
               <Settings className="w-4 h-4 text-amber-300" />
               <span className="hidden xl:inline">看板娘</span>
             </button>
+
+            <a
+              href="./v1/"
+              title="切换访问旧版界面 (/v1/)"
+              className="ml-auto px-2 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-mono text-amber-200/50 hover:text-amber-100 hover:bg-white/5 border border-transparent hover:border-amber-600/25 transition-colors"
+            >
+              v1
+            </a>
           </div>
         </div>
 
