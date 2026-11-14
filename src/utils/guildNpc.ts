@@ -227,8 +227,11 @@ export interface GuildRankInfo {
   streakDays: number;
 }
 
-export function calculateGuildRank(tasks: TaskItem[], logs: DailyLog[]): GuildRankInfo {
-  const todayStr = getTodayString();
+export function calculateGuildRank(
+  tasks: TaskItem[],
+  logs: DailyLog[],
+  todayStr: string = getTodayString()
+): GuildRankInfo {
   let totalHours = 0;
   let totalProgressDays = 0;
   const activeDateSet = new Set<string>();
@@ -418,8 +421,11 @@ export interface StaleTaskInfo {
   lastDateLabel: string;
 }
 
-export function getStaleInProgressTasks(tasks: TaskItem[], logs: DailyLog[]): StaleTaskInfo[] {
-  const todayStr = getTodayString();
+export function getStaleInProgressTasks(
+  tasks: TaskItem[],
+  logs: DailyLog[],
+  todayStr: string = getTodayString()
+): StaleTaskInfo[] {
   const latestLogMap = new Map<string, string>();
 
   logs.forEach((l) => {
@@ -449,64 +455,174 @@ export function getStaleInProgressTasks(tasks: TaskItem[], logs: DailyLog[]): St
   return stale.sort((a, b) => b.daysSinceLastActive - a.daysSinceLastActive);
 }
 
-export function getTimeGreeting(stats: GuildRankInfo): {
+export type TimePeriodKey =
+  | 'early_morning'
+  | 'morning'
+  | 'noon'
+  | 'afternoon'
+  | 'evening'
+  | 'late_night';
+
+export interface TimePeriodInfo {
+  key: TimePeriodKey;
+  label: string;
+  icon: string;
+  clockText: string;
+}
+
+export function getTimePeriodInfo(now: Date = new Date()): TimePeriodInfo {
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  const totalMinutes = hours * 60 + minutes;
+  const clockText = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+  if (totalMinutes >= 300 && totalMinutes < 540) {
+    // 05:00 - 08:59
+    return { key: 'early_morning', label: '清晨柜台', icon: '🌅', clockText };
+  }
+  if (totalMinutes >= 540 && totalMinutes < 690) {
+    // 09:00 - 11:29
+    return { key: 'morning', label: '上午营业', icon: '☀️', clockText };
+  }
+  if (totalMinutes >= 690 && totalMinutes < 840) {
+    // 11:30 - 13:59
+    return { key: 'noon', label: '午间小憩', icon: '🍵', clockText };
+  }
+  if (totalMinutes >= 840 && totalMinutes < 1080) {
+    // 14:00 - 17:59
+    return { key: 'afternoon', label: '午后营业', icon: '🌤️', clockText };
+  }
+  if (totalMinutes >= 1080 && totalMinutes < 1350) {
+    // 18:00 - 22:29
+    return { key: 'evening', label: '夜间灯火', icon: '🏮', clockText };
+  }
+  // 22:30 - 04:59
+  return { key: 'late_night', label: '深夜值守', icon: '🌙', clockText };
+}
+
+export function getTimeGreeting(
+  stats: GuildRankInfo,
+  now: Date = new Date()
+): {
+  periodKey: TimePeriodKey;
   periodLabel: string;
+  periodIcon: string;
+  clockText: string;
   greeting: string;
   expression: NpcExpression;
 } {
-  const hour = new Date().getHours();
+  const period = getTimePeriodInfo(now);
 
-  if (hour >= 5 && hour < 11) {
-    return {
-      periodLabel: '晨间柜台',
-      expression: stats.todayCheckedCount > 0 ? 'happy' : 'normal',
-      greeting:
-        stats.todayCheckedCount > 0
-          ? `早安，冒险者大人！今天已经完成了 ${stats.todayCheckedCount} 项委托汇报，真是元气满满的开局呢！`
-          : `早安，冒险者大人！清晨的委托柜台已经准备就绪，今天打算先攻略哪一项呢？`,
-    };
+  switch (period.key) {
+    case 'early_morning':
+      return {
+        periodKey: period.key,
+        periodLabel: period.label,
+        periodIcon: period.icon,
+        clockText: period.clockText,
+        expression: stats.todayCheckedCount > 0 ? 'happy' : 'normal',
+        greeting:
+          stats.todayCheckedCount > 0
+            ? `早安，冒险者大人！清晨就完成了 ${stats.todayCheckedCount} 项委托汇报，今天也是元气满满的开局呢！`
+            : `早安，冒险者大人！清晨的委托柜台已经准备就绪，今天打算先攻略哪一项呢？`,
+      };
+    case 'morning':
+      return {
+        periodKey: period.key,
+        periodLabel: period.label,
+        periodIcon: period.icon,
+        clockText: period.clockText,
+        expression: stats.todayCheckedCount > 0 ? 'happy' : 'normal',
+        greeting:
+          stats.todayCheckedCount > 0
+            ? `上午好！今天已经完成了 ${stats.todayCheckedCount} 项委托打卡，继续稳步推进手头的 ${stats.inProgressCount} 项冒险吧~`
+            : `上午好！公会大厅日头正暖，目前有 ${stats.inProgressCount} 项委托正在攻略中，准备先推进哪一份呢？`,
+      };
+    case 'noon':
+      return {
+        periodKey: period.key,
+        periodLabel: period.label,
+        periodIcon: period.icon,
+        clockText: period.clockText,
+        expression: 'normal',
+        greeting:
+          stats.todayCheckedCount > 0
+            ? `午安！上午已经拿下 ${stats.todayCheckedCount} 项推进啦，喝杯热茶小憩一下，下午继续加油吧~`
+            : `午安！忙里偷闲来公会坐坐吧~ 目前手头有 ${stats.inProgressCount} 项攻略中的委托，饭后要来汇报进度吗？`,
+      };
+    case 'afternoon':
+      return {
+        periodKey: period.key,
+        periodLabel: period.label,
+        periodIcon: period.icon,
+        clockText: period.clockText,
+        expression: stats.todayCheckedCount > 0 ? 'happy' : 'normal',
+        greeting:
+          stats.todayCheckedCount > 0
+            ? `下午好！今天已经汇报推进 ${stats.todayCheckedCount} 项委托了，午后茶香正浓，继续保持这个好节奏吧！`
+            : `下午好！现在是午后营业时段，目前共有 ${stats.inProgressCount} 项正在攻略的委托，今天有新的推进成果要登记吗？`,
+      };
+    case 'evening':
+      return {
+        periodKey: period.key,
+        periodLabel: period.label,
+        periodIcon: period.icon,
+        clockText: period.clockText,
+        expression: stats.todayCheckedCount > 0 ? 'happy' : 'thinking',
+        greeting:
+          stats.todayCheckedCount > 0
+            ? `晚上好！今日已累计达成 ${stats.todayCheckedCount} 次汇报，真是充实的一天呢！趁着夜灯还要继续登记吗？`
+            : `晚上好，忙碌了一天辛苦啦！趁着夜间灯火，把今天的游历进展记录到委托账本里吧~`,
+      };
+    case 'late_night':
+    default:
+      return {
+        periodKey: period.key,
+        periodLabel: period.label,
+        periodIcon: period.icon,
+        clockText: period.clockText,
+        expression: 'sleepy',
+        greeting: `呼啊…已经是 ${period.clockText} 的深夜值守时段啦，冒险者大人！虽然柜台随时为你亮着灯，但汇报完也别忘了早点休息哦~`,
+      };
   }
-  if (hour >= 11 && hour < 14) {
-    return {
-      periodLabel: '午间小憩',
-      expression: 'normal',
-      greeting: `午安！忙里偷闲来公会坐坐吧~ 目前手头有 ${stats.inProgressCount} 项攻略中的委托，需要汇报进度吗？`,
-    };
-  }
-  if (hour >= 14 && hour < 19) {
-    return {
-      periodLabel: '午后营业',
-      expression: stats.todayCheckedCount > 0 ? 'happy' : 'normal',
-      greeting:
-        stats.todayCheckedCount > 0
-          ? `下午好！今天已经汇报推进 ${stats.todayCheckedCount} 项委托了，继续保持这个节奏吧！`
-          : `下午好！目前共有 ${stats.inProgressCount} 项正在攻略的委托。今天有新的推进成果要登记吗？`,
-    };
-  }
-  if (hour >= 19 && hour < 23) {
-    return {
-      periodLabel: '夜间灯火',
-      expression: stats.todayCheckedCount > 0 ? 'happy' : 'thinking',
-      greeting:
-        stats.todayCheckedCount > 0
-          ? `晚上好！今日已累计达成 ${stats.todayCheckedCount} 次汇报，真是充实的一天呢！还要继续登记吗？`
-          : `晚上好，忙碌了一天辛苦啦！趁着夜色灯火，把今天的进展记录到委托账本里吧~`,
-    };
-  }
-
-  return {
-    periodLabel: '深夜值守',
-    expression: 'sleepy',
-    greeting: `呼啊…这么晚还来公会吗，冒险者大人？虽然柜台随时为你亮着灯，但汇报完也别忘了早点休息哦~`,
-  };
 }
 
 export function getRandomChatter(
   stats: GuildRankInfo,
   tasks: TaskItem[],
-  staleList: StaleTaskInfo[]
+  staleList: StaleTaskInfo[],
+  now: Date = new Date()
 ): { text: string; expression: NpcExpression } {
+  const period = getTimePeriodInfo(now);
+  const periodChatterMap: Record<TimePeriodKey, { text: string; expression: NpcExpression }> = {
+    early_morning: {
+      text: `现在是 ${period.clockText}，清晨刚擦拭完柜台，阳光洒在账本上的感觉真让人清醒呢~`,
+      expression: 'normal',
+    },
+    morning: {
+      text: `上午时段思维最清明啦，适合攻略需要专注力的新章节，或者整理一下「攻略中」的委托队列！`,
+      expression: 'happy',
+    },
+    noon: {
+      text: `午间时段稍微放慢脚步也好~ 记得超过 0.3 小时的专注打卡后，还可以开启表盘小憩几分钟哦！`,
+      expression: 'normal',
+    },
+    afternoon: {
+      text: `午后 ${period.clockText} 的公会最适合泡一壶茶慢慢推进度了，累了的话就告诉我开启营地茶歇计时吧~`,
+      expression: 'happy',
+    },
+    evening: {
+      text: `夜晚灯火已点亮，正是回顾今日收获的好时候，哪怕只推进半小时也值得在账本上记上一笔呢！`,
+      expression: 'thinking',
+    },
+    late_night: {
+      text: `已经到 ${period.clockText} 啦…熬夜开荒虽然刺激，也要注意护眼和休息呀，打完这一段就去睡好不好？`,
+      expression: 'sleepy',
+    },
+  };
+
   const pool: Array<{ text: string; expression: NpcExpression }> = [
+    periodChatterMap[period.key],
     {
       text: `只要每天推进一点点，哪怕只有 0.5h，积少成多也能达成「${stats.rankTitle}」以上的传说成就哦！`,
       expression: 'happy',
@@ -548,4 +664,203 @@ export function getRandomChatter(
   }
 
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ── Persistent NPC Image Cache + Decoded Bitmap Pool ─────────────────────────
+export const NPC_IMAGE_CACHE_NAME = 'guild_npc_image_cache_v1';
+
+const blobUrlCache = new Map<string, string>();
+const inflightImagePromises = new Map<string, Promise<string>>();
+const decodedImagePool = new Map<string, HTMLImageElement>();
+let presetWarmupScheduled = false;
+
+async function pinAndDecodeImage(src: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !src) return false;
+  if (decodedImagePool.has(src)) return true;
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const img = new Image();
+    img.decoding = 'async';
+
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (ok) {
+        decodedImagePool.set(src, img);
+      }
+      resolve(ok);
+    };
+
+    const decodeAndFinish = () => {
+      if (typeof img.decode === 'function') {
+        img.decode().then(() => finish(true)).catch(() => finish(true));
+      } else {
+        finish(true);
+      }
+    };
+
+    img.onload = decodeAndFinish;
+    img.onerror = () => finish(false);
+    img.src = src;
+
+    if (img.complete && img.naturalWidth > 0) {
+      decodeAndFinish();
+    }
+  });
+}
+
+export function resolveCachedNpcImageUrl(src: string): string {
+  if (!src || src.startsWith('data:') || src.startsWith('blob:')) return src;
+  return blobUrlCache.get(src) || src;
+}
+
+export function isNpcImageReady(src: string): boolean {
+  if (!src) return false;
+  if (src.startsWith('data:') || src.startsWith('blob:')) return true;
+  const cachedBlob = blobUrlCache.get(src);
+  if (cachedBlob && decodedImagePool.has(cachedBlob)) return true;
+  return decodedImagePool.has(src);
+}
+
+export function preloadAndCacheNpcImage(src: string): Promise<string> {
+  if (!src || typeof window === 'undefined') {
+    return Promise.resolve(src);
+  }
+
+  if (src.startsWith('data:') || src.startsWith('blob:')) {
+    return pinAndDecodeImage(src).then(() => src);
+  }
+
+  const cachedBlob = blobUrlCache.get(src);
+  if (cachedBlob) {
+    return pinAndDecodeImage(cachedBlob).then(() => cachedBlob);
+  }
+
+  const inflight = inflightImagePromises.get(src);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = (async () => {
+    try {
+      let response: Response | undefined;
+      let cache: Cache | undefined;
+
+      if ('caches' in window) {
+        try {
+          cache = await window.caches.open(NPC_IMAGE_CACHE_NAME);
+          const matched = await cache.match(src);
+          if (matched && matched.ok) {
+            response = matched;
+          }
+        } catch {
+          // Cache Storage may be disabled in private browsing contexts
+        }
+      }
+
+      if (!response) {
+        const fetched = await fetch(src, { cache: 'default' });
+        if (!fetched.ok) {
+          throw new Error(`HTTP ${fetched.status}`);
+        }
+        if (cache) {
+          try {
+            await cache.put(src, fetched.clone());
+          } catch {
+            // Ignore quota or opaque storage errors
+          }
+        }
+        response = fetched;
+      }
+
+      const blob = await response.blob();
+      if (blob.size > 0 && (!blob.type || blob.type.startsWith('image/'))) {
+        const objectUrl = URL.createObjectURL(blob);
+        blobUrlCache.set(src, objectUrl);
+        await pinAndDecodeImage(objectUrl);
+        return objectUrl;
+      }
+    } catch {
+      // Fall back to direct HTMLImageElement preload (e.g. non-CORS custom URLs)
+    }
+
+    await pinAndDecodeImage(src);
+    return src;
+  })().finally(() => {
+    inflightImagePromises.delete(src);
+  });
+
+  inflightImagePromises.set(src, promise);
+  return promise;
+}
+
+function scheduleIdlePresetWarmup(): void {
+  if (presetWarmupScheduled || typeof window === 'undefined') return;
+  presetWarmupScheduled = true;
+
+  const allPresetUrls: string[] = [];
+  NPC_PRESETS.forEach((preset) => {
+    if (preset.config.customBgUrl) allPresetUrls.push(preset.config.customBgUrl);
+    Object.values(preset.config.expressions).forEach((url) => {
+      if (url) allPresetUrls.push(url);
+    });
+  });
+
+  const uniquePending = Array.from(new Set(allPresetUrls)).filter(
+    (url) => !blobUrlCache.has(url) && !inflightImagePromises.has(url)
+  );
+  if (uniquePending.length === 0) return;
+
+  const runWarmup = async () => {
+    for (let i = 0; i < uniquePending.length; i += 2) {
+      const batch = uniquePending.slice(i, i + 2);
+      await Promise.all(batch.map((url) => preloadAndCacheNpcImage(url)));
+    }
+  };
+
+  const win = window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+  };
+  if (typeof win.requestIdleCallback === 'function') {
+    win.requestIdleCallback(() => {
+      void runWarmup();
+    }, { timeout: 3000 });
+  } else {
+    globalThis.setTimeout(() => {
+      void runWarmup();
+    }, 1500);
+  }
+}
+
+export function preloadNpcConfigAssets(
+  config: NpcConfig,
+  priorityExpression: NpcExpression = 'normal',
+  onUpdate?: () => void
+): void {
+  if (typeof window === 'undefined') return;
+
+  const priorityUrls: string[] = [];
+  const primaryExprUrl = config.expressions[priorityExpression] || config.expressions.normal;
+  if (primaryExprUrl) priorityUrls.push(primaryExprUrl);
+  if (config.displayMode === 'sprite') {
+    priorityUrls.push(config.customBgUrl || './npc/bg-guild-hall.jpg');
+  }
+
+  const secondaryUrls = Array.from(
+    new Set(Object.values(config.expressions).filter((url) => Boolean(url) && !priorityUrls.includes(url)))
+  );
+
+  const loadOne = (url: string) => {
+    const alreadyHadBlob = blobUrlCache.has(url);
+    void preloadAndCacheNpcImage(url).then(() => {
+      if (!alreadyHadBlob || blobUrlCache.has(url)) {
+        onUpdate?.();
+      }
+    });
+  };
+
+  Array.from(new Set(priorityUrls)).forEach(loadOne);
+  secondaryUrls.forEach(loadOne);
+  scheduleIdlePresetWarmup();
 }

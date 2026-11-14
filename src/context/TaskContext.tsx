@@ -1,8 +1,22 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback, useRef } from 'react';
 import { User } from 'firebase/auth';
-import { TaskItem, DailyLog, TaskStatus, ProgressType, ViewMode, TASK_STATUS_CONFIG } from '../types';
+import {
+  TaskItem,
+  DailyLog,
+  TaskStatus,
+  ProgressType,
+  ViewMode,
+  WorkSession,
+  RestSession,
+  PendingRestPrompt,
+  TASK_STATUS_CONFIG,
+} from '../types';
 import { createInitialSampleData } from '../data/initialData';
 import { getTodayString } from '../utils/date';
+import {
+  computeWorkSessionFromNow,
+  addMinutesToTimeHHMM,
+} from '../utils/timeDistribution';
 import { initAuth, googleSignIn, logout, getAccessToken, getStoredUser, isTokenExpired, AuthUser } from '../services/auth';
 import {
   findDriveFile,
@@ -44,12 +58,22 @@ interface TaskContextType {
     hours?: number;
     note?: string;
     markTaskAsCompleted?: boolean;
+    mode?: 'append' | 'replace';
+    restMinutes?: number;
   }) => DailyLog;
+  addRestSession: (
+    taskId: string,
+    date: string,
+    session: { startTime: string; endTime: string; durationMinutes: number; sessionId?: string }
+  ) => void;
+  deleteWorkSession: (taskId: string, date: string, sessionId: string) => void;
   deleteLog: (id: string) => void;
   getLogsForTask: (taskId: string) => DailyLog[];
   getLog: (taskId: string, date: string) => DailyLog | undefined;
   getLatestLogForTask: (taskId: string) => DailyLog | undefined;
   getTaskTotalHours: (taskId: string, upToDate?: string) => number;
+  pendingRestPrompt: PendingRestPrompt | null;
+  setPendingRestPrompt: (prompt: PendingRestPrompt | null) => void;
 
   // Active Modals Control
   checkInModalTask: TaskItem | null;
@@ -270,11 +294,23 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const latestStateRef = useRef({ tasks, logs, ganttGroupOrder });
   latestStateRef.current = { tasks, logs, ganttGroupOrder };
 
+  const cloneLogsForHistory = (sourceLogs: DailyLog[]): DailyLog[] =>
+    sourceLogs.map((l) => ({
+      ...l,
+      workSessions: l.workSessions
+        ? l.workSessions.map((s) => ({
+            ...s,
+            restSessions: s.restSessions ? s.restSessions.map((r) => ({ ...r })) : undefined,
+          }))
+        : undefined,
+      restSessions: l.restSessions ? l.restSessions.map((s) => ({ ...s })) : undefined,
+    }));
+
   const pushHistory = useCallback((description: string) => {
     const current = latestStateRef.current;
     const snapshot: HistorySnapshot = {
       tasks: current.tasks.map((t) => ({ ...t, tags: [...t.tags] })),
-      logs: current.logs.map((l) => ({ ...l })),
+      logs: cloneLogsForHistory(current.logs),
       ganttGroupOrder: [...current.ganttGroupOrder],
       description,
     };
@@ -314,6 +350,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }>({ isOpen: false });
 
   const [taskDetailTaskId, setTaskDetailTaskId] = useState<string | null>(null);
+  const [pendingRestPrompt, setPendingRestPrompt] = useState<PendingRestPrompt | null>(null);
 
   // Google Drive state
   const [user, setUser] = useState<AuthUser | User | null>(() => getStoredUser());
@@ -412,7 +449,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const current = latestStateRef.current;
     const redoSnapshot: HistorySnapshot = {
       tasks: current.tasks.map((t) => ({ ...t, tags: [...t.tags] })),
-      logs: current.logs.map((l) => ({ ...l })),
+      logs: cloneLogsForHistory(current.logs),
       ganttGroupOrder: [...current.ganttGroupOrder],
       description: entry.description,
     };
@@ -432,7 +469,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const current = latestStateRef.current;
     const undoSnapshot: HistorySnapshot = {
       tasks: current.tasks.map((t) => ({ ...t, tags: [...t.tags] })),
-      logs: current.logs.map((l) => ({ ...l })),
+      logs: cloneLogsForHistory(current.logs),
       ganttGroupOrder: [...current.ganttGroupOrder],
       description: entry.description,
     };
@@ -759,6 +796,175 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // Log Actions
+  const recalcTaskMetricsFromLogs = (taskLogs: DailyLog[]) => {
+    const totalHours =
+      Math.round(
+        taskLogs.reduce(
+          (sum, l) => sum + (typeof l.hours === 'number' && !isNaN(l.hours) ? l.hours : 0),
+          0
+        ) * 10
+      ) / 10;
+    const totalRestMinutes = taskLogs.reduce((sum, l) => {
+      if (typeof l.totalRestMinutes === 'number' && !isNaN(l.totalRestMinutes)) {
+        return sum + l.totalRestMinutes;
+      }
+      if (Array.isArray(l.restSessions)) {
+        return sum + l.restSessions.reduce((s, r) => s + r.durationMinutes, 0);
+      }
+      return sum;
+    }, 0);
+    return { totalHours, totalRestMinutes };
+  };
+
+  const ensureNormalizedWorkSessions = (log: DailyLog): WorkSession[] => {
+    const flatRests = Array.isArray(log.restSessions) ? log.restSessions : [];
+    if (Array.isArray(log.workSessions) && log.workSessions.length > 0) {
+      const ownedElsewhere = new Set<string>();
+      log.workSessions.forEach((ws) => {
+        (ws.restSessions || []).forEach((rs) => ownedElsewhere.add(rs.id));
+      });
+      flatRests.forEach((rs) => {
+        if (rs.sessionId) ownedElsewhere.add(rs.id);
+      });
+
+      const isSingle = log.workSessions.length === 1;
+      return log.workSessions.map((ws, idx) => {
+        const merged = new Map<string, RestSession>();
+        (ws.restSessions || []).forEach((rs) => merged.set(rs.id, { ...rs, sessionId: ws.id }));
+        flatRests.forEach((rs) => {
+          if (rs.sessionId === ws.id) {
+            merged.set(rs.id, { ...rs, sessionId: ws.id });
+          } else if (idx === 0 && !rs.sessionId && !ownedElsewhere.has(rs.id)) {
+            merged.set(rs.id, { ...rs, sessionId: ws.id });
+          }
+        });
+        const restSessions = Array.from(merged.values());
+        return {
+          ...ws,
+          note: ws.note !== undefined ? ws.note : isSingle ? log.note : undefined,
+          progressType: ws.progressType ?? (isSingle ? log.progressType : 'progress'),
+          restSessions: restSessions.length > 0 ? restSessions : undefined,
+          totalRestMinutes: restSessions.reduce((s, r) => s + r.durationMinutes, 0) || undefined,
+        };
+      });
+    }
+
+    const prevHours =
+      typeof log.hours === 'number' && !isNaN(log.hours) ? Math.round(log.hours * 10) / 10 : 0;
+    const created = log.createdAt ? new Date(log.createdAt) : new Date();
+    const calc = computeWorkSessionFromNow(prevHours > 0 ? prevHours : 0.1, created);
+    const wsId = 'ws-init-' + log.id;
+    const attachedRests = flatRests.map((rs) => ({ ...rs, sessionId: wsId }));
+    const totalRestMinutes = attachedRests.reduce((s, r) => s + r.durationMinutes, 0);
+
+    return [
+      {
+        id: wsId,
+        startTime: prevHours > 0 ? calc.startTime : calc.endTime,
+        endTime: calc.endTime,
+        hours: prevHours,
+        note: log.note,
+        progressType: log.progressType,
+        restSessions: attachedRests.length > 0 ? attachedRests : undefined,
+        totalRestMinutes: totalRestMinutes > 0 ? totalRestMinutes : undefined,
+        recordedAt: log.createdAt || created.toISOString(),
+      },
+    ];
+  };
+
+  const aggregateLogFromSessions = (
+    base: Omit<
+      DailyLog,
+      'progressType' | 'hours' | 'note' | 'workSessions' | 'restSessions' | 'totalRestMinutes'
+    >,
+    sessions: WorkSession[],
+    extraUnlinkedRests: RestSession[] = []
+  ): DailyLog => {
+    const rawHoursSum = sessions.reduce(
+      (s, ws) => s + (typeof ws.hours === 'number' && !isNaN(ws.hours) ? ws.hours : 0),
+      0
+    );
+    const roundedHours = Math.round(rawHoursSum * 10) / 10;
+    const hasExplicitHours = sessions.some(
+      (ws) => typeof ws.hours === 'number' && !isNaN(ws.hours) && ws.hours > 0
+    );
+
+    const noteParts = sessions.map((ws) => ws.note?.trim()).filter(Boolean) as string[];
+    const mergedNote = noteParts.length > 0 ? noteParts.join(' ｜ ') : undefined;
+
+    let aggProgress: ProgressType = 'rest';
+    if (sessions.some((ws) => ws.progressType === 'completed')) {
+      aggProgress = 'completed';
+    } else if (sessions.some((ws) => (ws.progressType ?? 'progress') === 'progress')) {
+      aggProgress = 'progress';
+    }
+
+    const restMap = new Map<string, RestSession>();
+    sessions.forEach((ws) => {
+      (ws.restSessions || []).forEach((rs) => restMap.set(rs.id, rs));
+    });
+    extraUnlinkedRests.forEach((rs) => {
+      if (!restMap.has(rs.id)) restMap.set(rs.id, rs);
+    });
+    const allRests = Array.from(restMap.values());
+    const totalRestMinutes = allRests.reduce((s, r) => s + r.durationMinutes, 0);
+
+    return {
+      ...base,
+      progressType: aggProgress,
+      hours: hasExplicitHours ? roundedHours : undefined,
+      note: mergedNote,
+      workSessions: sessions,
+      restSessions: allRests.length > 0 ? allRests : undefined,
+      totalRestMinutes: totalRestMinutes > 0 ? totalRestMinutes : undefined,
+    };
+  };
+
+  const createWorkSessionEntry = (
+    hoursVal: number | undefined,
+    noteVal: string | undefined,
+    progressType: ProgressType,
+    restMinutesVal: number | undefined
+  ): WorkSession => {
+    const now = new Date();
+    const safeHours =
+      typeof hoursVal === 'number' && !isNaN(hoursVal) && hoursVal >= 0
+        ? Math.round(hoursVal * 10) / 10
+        : 0;
+    const calc = computeWorkSessionFromNow(safeHours > 0 ? safeHours : 0.1, now);
+    const wsId = 'ws-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+
+    const parsedRest =
+      typeof restMinutesVal === 'number' && !isNaN(restMinutesVal) && restMinutesVal > 0
+        ? Math.round(restMinutesVal)
+        : 0;
+    const restSessions: RestSession[] | undefined =
+      parsedRest > 0
+        ? [
+            {
+              id: 'rest-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+              sessionId: wsId,
+              startTime: calc.endTime,
+              endTime: addMinutesToTimeHHMM(calc.endTime, parsedRest),
+              durationMinutes: parsedRest,
+              recordedAt: now.toISOString(),
+            },
+          ]
+        : undefined;
+
+    return {
+      id: wsId,
+      startTime: safeHours > 0 ? calc.startTime : calc.endTime,
+      endTime: calc.endTime,
+      hours: safeHours,
+      note: noteVal?.trim() || undefined,
+      progressType,
+      restSessions,
+      totalRestMinutes: parsedRest > 0 ? parsedRest : undefined,
+      recordedAt: now.toISOString(),
+    };
+  };
+
   const addOrUpdateLog = ({
     taskId,
     date,
@@ -766,6 +972,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     note,
     hours,
     markTaskAsCompleted,
+    mode = 'replace',
+    restMinutes,
   }: {
     taskId: string;
     date: string;
@@ -773,65 +981,147 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     note?: string;
     hours?: number;
     markTaskAsCompleted?: boolean;
+    mode?: 'append' | 'replace';
+    restMinutes?: number;
   }): DailyLog => {
-    const targetTask = tasks.find((t) => t.id === taskId);
-    const existingLog = logs.find((l) => l.taskId === taskId && l.date === date);
-    pushHistory(
-      `${existingLog ? '更新打卡' : '添加打卡'}「${targetTask?.title || ''}」(${date})`
-    );
-    let savedLog: DailyLog;
+    const currentTasks = latestStateRef.current.tasks;
+    const currentLogs = latestStateRef.current.logs;
+    const targetTask = currentTasks.find((t) => t.id === taskId);
+    const existingLog = currentLogs.find((l) => l.taskId === taskId && l.date === date);
+
+    const actionLabel = existingLog
+      ? mode === 'append'
+        ? '追加记录'
+        : '更新打卡'
+      : '添加打卡';
+    pushHistory(`${actionLabel}「${targetTask?.title || ''}」(${date})`);
 
     const parsedHours =
       typeof hours === 'number' && !isNaN(hours) && hours >= 0
         ? Math.round(hours * 10) / 10
         : undefined;
+    const parsedRestMinutes =
+      typeof restMinutes === 'number' && !isNaN(restMinutes) && restMinutes > 0
+        ? Math.round(restMinutes)
+        : undefined;
 
-    let updatedLogsForTask: DailyLog[] = [];
+    let savedLog: DailyLog;
+    let nextLogs: DailyLog[];
+    const existingIndex = currentLogs.findIndex((l) => l.taskId === taskId && l.date === date);
 
-    setLogs((prev) => {
-      const existingIndex = prev.findIndex((l) => l.taskId === taskId && l.date === date);
-      if (existingIndex >= 0) {
-        savedLog = {
-          ...prev[existingIndex],
+    if (existingIndex >= 0 && existingLog) {
+      if (mode === 'append') {
+        const normalizedPrev = ensureNormalizedWorkSessions(existingLog);
+        const newSession = createWorkSessionEntry(
+          parsedHours,
+          note,
           progressType,
-          hours: parsedHours,
-          note: note?.trim() || undefined,
-        };
-        const next = [...prev];
-        next[existingIndex] = savedLog;
-        updatedLogsForTask = next.filter((l) => l.taskId === taskId);
-        return next;
+          parsedRestMinutes
+        );
+        savedLog = aggregateLogFromSessions(
+          {
+            id: existingLog.id,
+            taskId: existingLog.taskId,
+            date: existingLog.date,
+            createdAt: existingLog.createdAt,
+          },
+          [...normalizedPrev, newSession]
+        );
       } else {
-        savedLog = {
+        const existingSessions = ensureNormalizedWorkSessions(existingLog);
+        if (existingSessions.length <= 1) {
+          const prevSingle = existingSessions[0];
+          const updatedSingle = createWorkSessionEntry(
+            parsedHours,
+            note,
+            progressType,
+            parsedRestMinutes
+          );
+          const keptRests = prevSingle?.restSessions || [];
+          const mergedRests = [
+            ...keptRests.map((r) => ({ ...r, sessionId: updatedSingle.id })),
+            ...(updatedSingle.restSessions || []),
+          ];
+          const totalRest = mergedRests.reduce((s, r) => s + r.durationMinutes, 0);
+          const rebuiltSession: WorkSession = {
+            ...updatedSingle,
+            restSessions: mergedRests.length > 0 ? mergedRests : undefined,
+            totalRestMinutes: totalRest > 0 ? totalRest : undefined,
+          };
+          savedLog = aggregateLogFromSessions(
+            {
+              id: existingLog.id,
+              taskId: existingLog.taskId,
+              date: existingLog.date,
+              createdAt: existingLog.createdAt,
+            },
+            [rebuiltSession]
+          );
+          // Preserve explicit 0h if user entered 0
+          if (parsedHours === 0) {
+            savedLog.hours = 0;
+          }
+        } else {
+          // Multi-session replace modifies top-level log fields without erasing individual sessions
+          let nextRestSessions = existingLog.restSessions ? [...existingLog.restSessions] : [];
+          if (parsedRestMinutes) {
+            const now = new Date();
+            const endTime = computeWorkSessionFromNow(0.1, now).endTime;
+            nextRestSessions.push({
+              id: 'rest-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+              startTime: endTime,
+              endTime: addMinutesToTimeHHMM(endTime, parsedRestMinutes),
+              durationMinutes: parsedRestMinutes,
+              recordedAt: now.toISOString(),
+            });
+          }
+          const totalRestMinutes = nextRestSessions.reduce((s, r) => s + r.durationMinutes, 0);
+          savedLog = {
+            ...existingLog,
+            progressType,
+            hours: parsedHours,
+            note: note?.trim() || undefined,
+            restSessions: nextRestSessions.length > 0 ? nextRestSessions : undefined,
+            totalRestMinutes: totalRestMinutes > 0 ? totalRestMinutes : undefined,
+          };
+        }
+      }
+      nextLogs = [...currentLogs];
+      nextLogs[existingIndex] = savedLog;
+    } else {
+      const initialSession = createWorkSessionEntry(
+        parsedHours,
+        note,
+        progressType,
+        parsedRestMinutes
+      );
+      savedLog = aggregateLogFromSessions(
+        {
           id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
           taskId,
           date,
-          progressType,
-          hours: parsedHours,
-          note: note?.trim() || undefined,
           createdAt: new Date().toISOString(),
-        };
-        const next = [...prev, savedLog];
-        updatedLogsForTask = next.filter((l) => l.taskId === taskId);
-        return next;
+        },
+        [initialSession]
+      );
+      if (parsedHours === 0) {
+        savedLog.hours = 0;
       }
-    });
+      nextLogs = [...currentLogs, savedLog];
+    }
+
+    const updatedLogsForTask = nextLogs.filter((l) => l.taskId === taskId);
+    setLogs(nextLogs);
 
     setTasks((prev) =>
       prev.map((task) => {
         if (task.id !== taskId) return task;
 
-        const isMarkDone = markTaskAsCompleted || progressType === 'completed';
+        const isMarkDone = markTaskAsCompleted || savedLog.progressType === 'completed';
         const newStatus = isMarkDone ? 'done' : task.status === 'backlog' ? 'in_progress' : task.status;
         const newStartDate = task.startDate || date;
         const newCompletedDate = isMarkDone ? (task.completedDate || date) : task.completedDate;
-        const totalHours =
-          Math.round(
-            updatedLogsForTask.reduce(
-              (sum, l) => sum + (typeof l.hours === 'number' && !isNaN(l.hours) ? l.hours : 0),
-              0
-            ) * 10
-          ) / 10;
+        const { totalHours, totalRestMinutes } = recalcTaskMetricsFromLogs(updatedLogsForTask);
 
         return {
           ...task,
@@ -839,36 +1129,189 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           startDate: newStartDate,
           completedDate: newCompletedDate,
           totalHours,
+          totalRestMinutes,
           updatedAt: new Date().toISOString(),
         };
       })
     );
 
-    return savedLog!;
+    return savedLog;
   };
 
+  const addRestSession = useCallback(
+    (
+      taskId: string,
+      date: string,
+      session: { startTime: string; endTime: string; durationMinutes: number; sessionId?: string }
+    ) => {
+      const currentTasks = latestStateRef.current.tasks;
+      const currentLogs = latestStateRef.current.logs;
+      const targetTask = currentTasks.find((t) => t.id === taskId);
+      const mins = Math.max(1, Math.round(session.durationMinutes));
+
+      pushHistory(`记录「${targetTask?.title || ''}」事后休息 ${mins} 分钟`);
+
+      const existingIndex = currentLogs.findIndex((l) => l.taskId === taskId && l.date === date);
+      let nextLogs: DailyLog[];
+
+      if (existingIndex >= 0) {
+        const prevLog = currentLogs[existingIndex];
+        const sessions = ensureNormalizedWorkSessions(prevLog);
+        const targetIdx = session.sessionId
+          ? sessions.findIndex((s) => s.id === session.sessionId)
+          : sessions.length - 1;
+        const resolvedSessionId = targetIdx >= 0 ? sessions[targetIdx].id : undefined;
+
+        const newRest: RestSession = {
+          id: 'rest-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+          sessionId: resolvedSessionId,
+          startTime: session.startTime,
+          endTime: session.endTime,
+          durationMinutes: mins,
+          recordedAt: new Date().toISOString(),
+        };
+
+        const updatedSessions = sessions.map((s, idx) => {
+          if (idx !== targetIdx) return s;
+          const nextRs = [...(s.restSessions || []), newRest];
+          return {
+            ...s,
+            restSessions: nextRs,
+            totalRestMinutes: nextRs.reduce((sum, r) => sum + r.durationMinutes, 0),
+          };
+        });
+
+        const updatedLog = aggregateLogFromSessions(
+          {
+            id: prevLog.id,
+            taskId: prevLog.taskId,
+            date: prevLog.date,
+            createdAt: prevLog.createdAt,
+          },
+          updatedSessions
+        );
+        // Preserve multi-session replace top-level hours/note if they differed
+        if (prevLog.hours === 0 && !updatedLog.hours) {
+          updatedLog.hours = 0;
+        }
+        nextLogs = [...currentLogs];
+        nextLogs[existingIndex] = updatedLog;
+      } else {
+        const initialSession = createWorkSessionEntry(0, undefined, 'progress', undefined);
+        const newRest: RestSession = {
+          id: 'rest-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+          sessionId: initialSession.id,
+          startTime: session.startTime,
+          endTime: session.endTime,
+          durationMinutes: mins,
+          recordedAt: new Date().toISOString(),
+        };
+        initialSession.restSessions = [newRest];
+        initialSession.totalRestMinutes = mins;
+
+        const createdLog = aggregateLogFromSessions(
+          {
+            id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+            taskId,
+            date,
+            createdAt: new Date().toISOString(),
+          },
+          [initialSession]
+        );
+        nextLogs = [...currentLogs, createdLog];
+      }
+
+      const { totalRestMinutes: taskTotalRestMinutes } = recalcTaskMetricsFromLogs(
+        nextLogs.filter((l) => l.taskId === taskId)
+      );
+
+      setLogs(nextLogs);
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                totalRestMinutes: taskTotalRestMinutes,
+                updatedAt: new Date().toISOString(),
+              }
+            : t
+        )
+      );
+    },
+    [pushHistory]
+  );
+
+  const deleteWorkSession = useCallback(
+    (taskId: string, date: string, sessionId: string) => {
+      const currentTasks = latestStateRef.current.tasks;
+      const currentLogs = latestStateRef.current.logs;
+      const existingIndex = currentLogs.findIndex((l) => l.taskId === taskId && l.date === date);
+      if (existingIndex < 0) return;
+
+      const targetTask = currentTasks.find((t) => t.id === taskId);
+      const prevLog = currentLogs[existingIndex];
+      const sessions = ensureNormalizedWorkSessions(prevLog);
+      const remainingSessions = sessions.filter((s) => s.id !== sessionId);
+
+      pushHistory(`删除「${targetTask?.title || ''}」${date} 的一条记录`);
+
+      let nextLogs: DailyLog[];
+      if (remainingSessions.length === 0) {
+        nextLogs = currentLogs.filter((l) => l.id !== prevLog.id);
+      } else {
+        const updatedLog = aggregateLogFromSessions(
+          {
+            id: prevLog.id,
+            taskId: prevLog.taskId,
+            date: prevLog.date,
+            createdAt: prevLog.createdAt,
+          },
+          remainingSessions
+        );
+        nextLogs = [...currentLogs];
+        nextLogs[existingIndex] = updatedLog;
+      }
+
+      const taskLogs = nextLogs.filter((l) => l.taskId === taskId);
+      const { totalHours, totalRestMinutes } = recalcTaskMetricsFromLogs(taskLogs);
+
+      setLogs(nextLogs);
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                totalHours,
+                totalRestMinutes,
+                updatedAt: new Date().toISOString(),
+              }
+            : t
+        )
+      );
+    },
+    [pushHistory]
+  );
+
   const deleteLog = (id: string) => {
-    const target = logs.find((l) => l.id === id);
+    const currentLogs = latestStateRef.current.logs;
+    const currentTasks = latestStateRef.current.tasks;
+    const target = currentLogs.find((l) => l.id === id);
     if (target) {
-      const targetTask = tasks.find((t) => t.id === target.taskId);
+      const targetTask = currentTasks.find((t) => t.id === target.taskId);
       pushHistory(`删除「${targetTask?.title || ''}」${target.date} 的打卡记录`);
     }
-    setLogs((prev) => prev.filter((l) => l.id !== id));
+    const remainingAllLogs = currentLogs.filter((l) => l.id !== id);
+    setLogs(remainingAllLogs);
     if (target) {
       setTasks((prev) =>
         prev.map((task) => {
           if (task.id !== target.taskId) return task;
-          const remainingLogs = logs.filter((l) => l.taskId === target.taskId && l.id !== id);
-          const totalHours =
-            Math.round(
-              remainingLogs.reduce(
-                (sum, l) => sum + (typeof l.hours === 'number' && !isNaN(l.hours) ? l.hours : 0),
-                0
-              ) * 10
-            ) / 10;
+          const remainingLogs = remainingAllLogs.filter((l) => l.taskId === target.taskId);
+          const { totalHours, totalRestMinutes } = recalcTaskMetricsFromLogs(remainingLogs);
           return {
             ...task,
             totalHours,
+            totalRestMinutes,
             updatedAt: new Date().toISOString(),
           };
         })
@@ -1243,11 +1686,15 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         reorderTasks,
         reorderTasksGlobal,
         addOrUpdateLog,
+        addRestSession,
+        deleteWorkSession,
         deleteLog,
         getLogsForTask,
         getLog,
         getLatestLogForTask,
         getTaskTotalHours,
+        pendingRestPrompt,
+        setPendingRestPrompt,
         checkInModalTask,
         checkInModalDate,
         openCheckInModal,

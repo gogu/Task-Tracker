@@ -16,6 +16,8 @@ import {
   Sparkles,
   Filter,
   X,
+  Coffee,
+  Timer,
 } from 'lucide-react';
 import {
   TaskItem,
@@ -36,6 +38,11 @@ import {
   getWeekdayChinese,
   isWeekend,
 } from '../utils/date';
+import {
+  computeHourlyDistribution,
+  formatRestDuration,
+  extractLogWorkIntervals,
+} from '../utils/timeDistribution';
 
 type ShareDimension = 'task' | 'status' | 'tag';
 
@@ -82,6 +89,8 @@ export const StatsView: React.FC = () => {
   const [shareDimension, setShareDimension] = useState<ShareDimension>('task');
   const [hoveredSliceId, setHoveredSliceId] = useState<string | null>(null);
   const [selectedDrillDate, setSelectedDrillDate] = useState<string | null>(null);
+  const [timeDistScope, setTimeDistScope] = useState<'period' | 'day'>('period');
+  const [hoveredHour, setHoveredHour] = useState<number | null>(null);
 
   // Compute current period date window
   const periodWindow = useMemo(() => {
@@ -481,6 +490,25 @@ export const StatsView: React.FC = () => {
 
   const topTask = taskBreakdown[0] || null;
   const hoveredSlice = donutSlices.find((s) => s.id === hoveredSliceId) || null;
+
+  // Daily Time-of-Day Distribution (Work vs Rest across 24h)
+  const effectiveTimeDistScope = period === 'day' ? 'day' : timeDistScope;
+  const timeDistTargetLogs = useMemo(() => {
+    if (effectiveTimeDistScope === 'day') {
+      return periodLogs.filter((l) => l.date === activeDetailDate);
+    }
+    return periodLogs;
+  }, [effectiveTimeDistScope, periodLogs, activeDetailDate]);
+
+  const hourlyDistribution = useMemo(
+    () => computeHourlyDistribution(timeDistTargetLogs),
+    [timeDistTargetLogs]
+  );
+
+  const inspectedHourBucket =
+    hoveredHour !== null
+      ? hourlyDistribution.hours[hoveredHour]
+      : hourlyDistribution.peakHour;
 
   return (
     <div className="space-y-4 pb-6 w-full min-w-0 overflow-x-hidden">
@@ -1212,6 +1240,245 @@ export const StatsView: React.FC = () => {
         </div>
       )}
 
+      {/* 4.5 Daily Time-of-Day Distribution (24-Hour Work & Post-Work Rest Slots) */}
+      <div className="guild-card border p-4 sm:p-5 rounded-2xl shadow-xs space-y-4 w-full min-w-0">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
+              <Timer className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>
+                每日时间分布展示（
+                {effectiveTimeDistScope === 'day'
+                  ? `${activeDetailDate} 当日 24 小时`
+                  : period === 'week'
+                    ? '本周 24 小时叠加分布'
+                    : '本月 24 小时叠加分布'}
+                ）
+              </span>
+            </h3>
+            <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+              按全天 00:00 ~ 23:59 展示各时段投入工作时长与事后休息时长分布（鼠标悬停或点击柱条查看详情）
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {period !== 'day' && (
+              <div className="inline-flex items-center bg-amber-900/10 dark:bg-black/30 p-0.5 rounded-xl border border-amber-800/20 dark:border-amber-700/30 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setTimeDistScope('period')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
+                    effectiveTimeDistScope === 'period'
+                      ? 'bg-amber-600 text-white'
+                      : 'text-stone-600 dark:text-stone-300'
+                  }`}
+                >
+                  当期汇总
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeDistScope('day')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
+                    effectiveTimeDistScope === 'day'
+                      ? 'bg-amber-600 text-white'
+                      : 'text-stone-600 dark:text-stone-300'
+                  }`}
+                >
+                  单日 ({activeDetailDate.slice(5)})
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 text-xs text-stone-500 dark:text-stone-400 pl-1">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-xs bg-amber-500 inline-block" />
+                <span>推进投入</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500 inline-block" />
+                <span>事后休息</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary Metrics Pills */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-900 dark:text-amber-200 border border-amber-500/30 font-bold">
+            主力时段：
+            {hourlyDistribution.peakPeriod
+              ? `${hourlyDistribution.peakPeriod.icon} ${hourlyDistribution.peakPeriod.label} (${hourlyDistribution.peakPeriod.rangeLabel})`
+              : '暂无记录'}
+          </span>
+          {hourlyDistribution.peakHour && (
+            <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-800 dark:text-blue-300 border border-blue-500/25 font-bold font-mono">
+              峰值时刻：{hourlyDistribution.peakHour.label}（
+              {formatHours(hourlyDistribution.peakHour.workHours)}）
+            </span>
+          )}
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
+            <Coffee className="w-3.5 h-3.5" />
+            <span>
+              事后休息：{hourlyDistribution.totalRestCount} 次 ·{' '}
+              {formatRestDuration(hourlyDistribution.totalRestMinutes)}
+            </span>
+          </span>
+        </div>
+
+        {/* 24-Hour Histogram */}
+        {hourlyDistribution.totalWorkHours > 0 || hourlyDistribution.totalRestMinutes > 0 ? (
+          <div className="space-y-2 w-full overflow-x-hidden">
+            <div
+              className="grid items-end h-36 gap-0.5 sm:gap-1 pt-2 px-1 rounded-xl bg-amber-900/[0.04] dark:bg-black/25 border border-amber-800/15 dark:border-white/10"
+              style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
+              onMouseLeave={() => setHoveredHour(null)}
+            >
+              {hourlyDistribution.hours.map((hb) => {
+                const workPct =
+                  hb.workHours > 0
+                    ? Math.max(8, (hb.workHours / hourlyDistribution.maxWorkHoursInHour) * 100)
+                    : 0;
+                const restPct =
+                  hb.restMinutes > 0
+                    ? Math.max(8, (hb.restMinutes / hourlyDistribution.maxRestMinutesInHour) * 100)
+                    : 0;
+                const isActive = hoveredHour === hb.hour;
+                const showTickLabel = hb.hour % 3 === 0 || hb.hour === 23;
+
+                return (
+                  <button
+                    key={hb.hour}
+                    type="button"
+                    onMouseEnter={() => setHoveredHour(hb.hour)}
+                    onClick={() => setHoveredHour((prev) => (prev === hb.hour ? null : hb.hour))}
+                    className={`min-w-0 h-full flex flex-col items-center justify-end pb-1 rounded-lg transition-colors cursor-pointer ${
+                      isActive
+                        ? 'bg-amber-500/20 dark:bg-amber-500/25'
+                        : 'hover:bg-amber-900/10 dark:hover:bg-white/10'
+                    }`}
+                    title={`${hb.label} - ${String((hb.hour + 1) % 24).padStart(
+                      2,
+                      '0'
+                    )}:00\n推进投入: ${formatHours(hb.workHours)} (${
+                      hb.workSessionCount
+                    } 次)\n事后休息: ${hb.restMinutes} 分钟 (${hb.restSessionCount} 次)`}
+                  >
+                    <div className="w-full flex-1 flex items-end justify-center gap-[1px] px-[1px] sm:px-0.5">
+                      {/* Work Bar */}
+                      <div
+                        className={`flex-1 max-w-[10px] rounded-t-sm transition-all duration-300 ${
+                          hb.workHours > 0
+                            ? 'bg-amber-500 dark:bg-amber-400'
+                            : 'bg-amber-900/10 dark:bg-white/5 h-[2px]'
+                        }`}
+                        style={{ height: hb.workHours > 0 ? `${workPct}%` : '2px' }}
+                      />
+                      {/* Rest Bar */}
+                      {hb.restMinutes > 0 && (
+                        <div
+                          className="flex-1 max-w-[8px] rounded-t-sm bg-emerald-500 dark:bg-emerald-400 transition-all duration-300"
+                          style={{ height: `${restPct}%` }}
+                        />
+                      )}
+                    </div>
+                    <span
+                      className={`mt-1 text-[9px] sm:text-[10px] font-mono leading-none ${
+                        isActive
+                          ? 'text-amber-800 dark:text-amber-200 font-extrabold'
+                          : showTickLabel
+                            ? 'text-stone-600 dark:text-stone-300 font-semibold'
+                            : 'text-stone-400/50 dark:text-stone-600 hidden sm:inline'
+                      }`}
+                    >
+                      {hb.shortLabel}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {inspectedHourBucket && (
+              <div className="px-3 py-2 rounded-xl guild-subpanel border text-xs flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 font-bold text-stone-800 dark:text-amber-100">
+                  <span className="font-mono text-amber-700 dark:text-amber-300">
+                    {inspectedHourBucket.label} ~{' '}
+                    {String((inspectedHourBucket.hour + 1) % 24).padStart(2, '0')}:00
+                  </span>
+                  <span>{hoveredHour !== null ? '选中时段详情' : '当前最高峰时刻'}</span>
+                </div>
+                <div className="flex items-center gap-4 text-stone-600 dark:text-stone-300 font-mono">
+                  <span>
+                    推进投入:{' '}
+                    <strong className="text-amber-700 dark:text-amber-300">
+                      {formatHours(inspectedHourBucket.workHours)}
+                    </strong>{' '}
+                    ({inspectedHourBucket.workSessionCount} 次)
+                  </span>
+                  <span>
+                    事后休息:{' '}
+                    <strong className="text-emerald-700 dark:text-emerald-300">
+                      {inspectedHourBucket.restMinutes} 分钟
+                    </strong>{' '}
+                    ({inspectedHourBucket.restSessionCount} 次)
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="py-8 text-center text-xs text-stone-400 dark:text-stone-500 rounded-xl bg-amber-900/[0.03] dark:bg-black/20 border border-dashed border-amber-800/20">
+            该范围内暂无带投入或休息时段的打卡记录
+          </div>
+        )}
+
+        {/* 6 Time-of-Day Buckets Summary */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          {hourlyDistribution.periods.map((p) => {
+            const isPeak =
+              hourlyDistribution.peakPeriod?.id === p.id &&
+              (p.workHours > 0 || p.restMinutes > 0);
+            return (
+              <div
+                key={p.id}
+                className={`p-2.5 rounded-xl border transition-colors ${
+                  isPeak
+                    ? 'bg-amber-500/15 border-amber-500/50 dark:bg-amber-500/20'
+                    : 'bg-white/60 dark:bg-black/20 border-amber-800/15 dark:border-amber-700/25'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1 text-xs font-extrabold text-stone-800 dark:text-amber-100">
+                  <span>
+                    {p.icon} {p.label}
+                  </span>
+                  <span className="text-[10px] font-mono text-stone-500 dark:text-stone-400">
+                    {p.rangeLabel}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex items-baseline justify-between gap-1">
+                  <span className="text-sm font-extrabold font-mono text-amber-700 dark:text-amber-300">
+                    {formatHours(p.workHours)}
+                  </span>
+                  <span className="text-[10px] text-stone-500 dark:text-stone-400 font-semibold">
+                    {p.workSharePct.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 w-full rounded-full bg-amber-900/10 dark:bg-black/35 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-amber-500 transition-all duration-300"
+                    style={{ width: `${p.workHours > 0 ? Math.max(6, p.workSharePct) : 0}%` }}
+                  />
+                </div>
+                <div className="mt-1.5 text-[10px] text-emerald-700 dark:text-emerald-300 font-mono truncate">
+                  {p.restMinutes > 0
+                    ? `☕ 休息 ${p.restMinutes}m (${p.restSessionCount}次)`
+                    : '☕ 无事后休息'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 5. Daily Check-in Log Details (当日打卡记录与时间明细) */}
       <div className="guild-card border p-4 sm:p-5 rounded-2xl shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1280,13 +1547,80 @@ export const StatsView: React.FC = () => {
                       </h4>
                     </div>
 
-                    {log.note ? (
-                      <p className="text-xs text-stone-600 dark:text-stone-300 line-clamp-2 bg-amber-900/5 dark:bg-black/30 p-2 rounded-lg border border-amber-800/10 dark:border-amber-700/20">
-                        {log.note}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-stone-400 italic">无备注说明</p>
-                    )}
+                    {(() => {
+                      const workIntervals = extractLogWorkIntervals(log);
+                      const restList = log.restSessions || [];
+                      if (workIntervals.length > 1) {
+                        return (
+                          <div className="space-y-1.5 pt-0.5">
+                            {workIntervals.map((iv, sIdx) => (
+                              <div
+                                key={iv.id}
+                                className="p-2 rounded-lg bg-amber-900/5 dark:bg-black/30 border border-amber-800/10 dark:border-amber-700/20 space-y-0.5 text-[11px]"
+                              >
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono font-bold text-amber-800 dark:text-amber-300">
+                                    #{sIdx + 1}
+                                  </span>
+                                  <span className="font-mono text-sky-700 dark:text-sky-300">
+                                    🕒 {iv.startTime}-{iv.endTime}
+                                  </span>
+                                  <span className="font-mono font-bold text-stone-800 dark:text-amber-100">
+                                    {formatHours(iv.hours)}
+                                  </span>
+                                  {iv.restSessions.map((rs) => (
+                                    <span
+                                      key={rs.id}
+                                      className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                    >
+                                      ☕ 休 {rs.durationMinutes}m
+                                    </span>
+                                  ))}
+                                </div>
+                                {iv.note && (
+                                  <p className="text-stone-600 dark:text-stone-300 truncate">
+                                    {iv.note}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <>
+                          {log.note ? (
+                            <p className="text-xs text-stone-600 dark:text-stone-300 line-clamp-2 bg-amber-900/5 dark:bg-black/30 p-2 rounded-lg border border-amber-800/10 dark:border-amber-700/20">
+                              {log.note}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-stone-400 italic">无备注说明</p>
+                          )}
+
+                          {(workIntervals.length > 0 || restList.length > 0) && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {workIntervals.map((iv) => (
+                                <span
+                                  key={iv.id}
+                                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/20"
+                                >
+                                  🕒 {iv.startTime}-{iv.endTime}
+                                </span>
+                              ))}
+                              {restList.map((rs) => (
+                                <span
+                                  key={rs.id}
+                                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                                >
+                                  ☕ 休 {rs.startTime}-{rs.endTime} ({rs.durationMinutes}m)
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="pt-2 border-t border-amber-800/15 dark:border-amber-700/25 flex items-center justify-between text-xs">

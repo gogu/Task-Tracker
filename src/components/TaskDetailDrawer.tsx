@@ -9,10 +9,16 @@ import {
   PlusCircle,
   Edit2,
   Tag,
+  Coffee,
 } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 import { TASK_STATUS_CONFIG, PROGRESS_TYPE_CONFIG } from '../types';
 import { getWeekdayChinese, diffInDays, getTodayString, formatHours } from '../utils/date';
+import {
+  computeTaskTimeAndRestProfile,
+  formatRestDuration,
+  extractLogWorkIntervals,
+} from '../utils/timeDistribution';
 
 export const TaskDetailDrawer: React.FC = () => {
   const {
@@ -53,6 +59,11 @@ export const TaskDetailDrawer: React.FC = () => {
     const endDate = task.completedDate || todayStr;
     return diffInDays(task.startDate, endDate) + 1;
   }, [task, todayStr]);
+
+  const timeAndRestProfile = useMemo(
+    () => computeTaskTimeAndRestProfile(logs),
+    [logs]
+  );
 
   const statusConfig = task ? TASK_STATUS_CONFIG[task.status] : null;
   const isOpen = !!task;
@@ -156,6 +167,12 @@ export const TaskDetailDrawer: React.FC = () => {
                     <span>推进 {progressCount} 天</span>
                   </span>
                 )}
+                {timeAndRestProfile.totalRestMinutes > 0 && (
+                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                    <Coffee className="w-3.5 h-3.5 shrink-0" />
+                    <span>累计休息 {formatRestDuration(timeAndRestProfile.totalRestMinutes)}</span>
+                  </span>
+                )}
               </div>
 
               {/* Action buttons */}
@@ -169,7 +186,7 @@ export const TaskDetailDrawer: React.FC = () => {
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 active:scale-[0.98] rounded-lg transition-all cursor-pointer"
                 >
                   <PlusCircle className="w-3.5 h-3.5" />
-                  今日打卡
+                  {logs.some((l) => l.date === todayStr) ? '追加今日记录' : '今日打卡'}
                 </button>
                 <button
                   type="button"
@@ -207,6 +224,97 @@ export const TaskDetailDrawer: React.FC = () => {
                 </div>
               ) : (
                 <div>
+                  {/* Frequent Time-of-Day & Post-Work Rest Summary */}
+                  <div className="mb-5 p-3.5 rounded-xl guild-card border space-y-3">
+                    {/* Frequent Time Periods */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>经常进行的时间段</span>
+                        </span>
+                        {timeAndRestProfile.peakWindowLabel && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/30">
+                            常驻 {timeAndRestProfile.peakWindowLabel}
+                          </span>
+                        )}
+                      </div>
+
+                      {timeAndRestProfile.frequentPeriods.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {timeAndRestProfile.frequentPeriods.slice(0, 3).map((fp) => (
+                            <div key={fp.id} className="space-y-0.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-stone-700 dark:text-amber-100">
+                                  {fp.icon} {fp.label} ({fp.rangeLabel})
+                                </span>
+                                <span className="font-mono font-bold text-amber-700 dark:text-amber-300">
+                                  {formatHours(fp.workHours)} · {fp.workSharePct.toFixed(0)}%
+                                </span>
+                              </div>
+                              <div className="h-1.5 w-full rounded-full bg-amber-900/10 dark:bg-black/35 overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-amber-500"
+                                  style={{ width: `${Math.max(6, fp.workSharePct)}%` }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                          暂无带时长的时间段统计
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Post-Work Rest Situation */}
+                    <div className="pt-2.5 border-t border-amber-800/15 dark:border-white/10 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-1.5">
+                          <Coffee className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <span>事后休息情况</span>
+                        </span>
+                        {timeAndRestProfile.totalRestCount > 0 && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
+                            {timeAndRestProfile.totalRestCount} 次 ·{' '}
+                            {formatRestDuration(timeAndRestProfile.totalRestMinutes)}
+                          </span>
+                        )}
+                      </div>
+
+                      {timeAndRestProfile.totalRestCount > 0 ? (
+                        <div className="space-y-1.5">
+                          <div className="text-[11px] text-stone-600 dark:text-stone-300 flex items-center gap-3">
+                            <span>
+                              累计总时长：
+                              <strong className="text-emerald-700 dark:text-emerald-300">
+                                {formatRestDuration(timeAndRestProfile.totalRestMinutes)}
+                              </strong>
+                            </span>
+                            <span>
+                              平均每次：<strong>{timeAndRestProfile.avgRestMinutes} 分钟</strong>
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {timeAndRestProfile.recentRestSessions.slice(0, 4).map((rs) => (
+                              <span
+                                key={rs.id}
+                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60"
+                              >
+                                {rs.date.slice(5)} {rs.startTime}-{rs.endTime} ({rs.durationMinutes}m)
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                          暂无事后休息记录（当日打卡超过 0.3h 时看板娘会自动发起休息确认）
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
                   {/* "最新" marker at top */}
                   <div className="flex items-center gap-2 mb-5">
                     <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest select-none">
@@ -266,12 +374,97 @@ export const TaskDetailDrawer: React.FC = () => {
                               )}
                             </div>
 
-                            {/* Note block — only shown when note exists */}
-                            {log.note && (
-                              <div className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-100 dark:border-zinc-700/60 rounded-lg px-3 py-2 leading-relaxed italic">
-                                {log.note}
-                              </div>
-                            )}
+                            {/* Work & Post-Work Rest Time Windows / Per-Session Breakdown */}
+                            {(() => {
+                              const intervals = extractLogWorkIntervals(log);
+                              const restSessions = log.restSessions || [];
+                              if (intervals.length > 1) {
+                                return (
+                                  <div className="space-y-1.5 mt-1">
+                                    {intervals.map((iv, sIdx) => {
+                                      const sCfg = iv.progressType
+                                        ? PROGRESS_TYPE_CONFIG[iv.progressType]
+                                        : config;
+                                      return (
+                                        <div
+                                          key={iv.id}
+                                          className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200/70 dark:border-zinc-700/60 space-y-1"
+                                        >
+                                          <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                                            <span className="font-mono font-extrabold text-amber-700 dark:text-amber-300">
+                                              #{sIdx + 1} {sIdx > 0 ? '追加' : ''}
+                                            </span>
+                                            <span
+                                              className={`px-1.5 py-0.2 rounded font-semibold border ${sCfg.lightBg}`}
+                                            >
+                                              {sCfg.label}
+                                            </span>
+                                            <span className="font-mono px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/70 dark:border-sky-800/70">
+                                              🕒 {iv.startTime}-{iv.endTime}
+                                            </span>
+                                            {iv.hours > 0 && (
+                                              <span className="font-mono font-bold text-blue-700 dark:text-blue-300">
+                                                投入 {formatHours(iv.hours)}
+                                              </span>
+                                            )}
+                                            {iv.restSessions.map((rs) => (
+                                              <span
+                                                key={rs.id}
+                                                className="font-mono px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/70"
+                                              >
+                                                ☕ 休 {rs.startTime}-{rs.endTime} ({rs.durationMinutes}分钟)
+                                              </span>
+                                            ))}
+                                          </div>
+                                          {iv.note && (
+                                            <div className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed italic">
+                                              {iv.note}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <>
+                                  {(intervals.length > 0 || restSessions.length > 0) && (
+                                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                                      {intervals.map((iv) => (
+                                        <span
+                                          key={iv.id}
+                                          className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/70 dark:border-sky-800/70"
+                                          title={
+                                            iv.isEstimated
+                                              ? '根据历史打卡时间推算的进行时段'
+                                              : '记录的实际进行时段'
+                                          }
+                                        >
+                                          🕒 {iv.startTime}-{iv.endTime}
+                                        </span>
+                                      ))}
+                                      {restSessions.map((rs) => (
+                                        <span
+                                          key={rs.id}
+                                          className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/70"
+                                        >
+                                          ☕ 事后休息 {rs.startTime}-{rs.endTime} ({rs.durationMinutes}分钟)
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Note block — only shown when note exists */}
+                                  {log.note && (
+                                    <div className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-100 dark:border-zinc-700/60 rounded-lg px-3 py-2 leading-relaxed italic">
+                                      {log.note}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       );

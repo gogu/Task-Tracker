@@ -2,6 +2,36 @@ export type TaskStatus = 'backlog' | 'in_progress' | 'done' | 'paused';
 
 export type ProgressType = 'rest' | 'progress' | 'completed';
 
+export interface WorkSession {
+  id: string;
+  startTime: string;            // HH:mm (24h format, e.g. "14:30")
+  endTime: string;              // HH:mm (24h format, e.g. "15:30")
+  hours: number;                // 本次独立时长（小时）
+  note?: string;                // 本次独立备注
+  progressType?: ProgressType;  // 本次独立状态
+  restSessions?: RestSession[]; // 本次关联的事后休息记录
+  totalRestMinutes?: number;    // 本次关联的事后休息总分钟数
+  recordedAt: string;           // ISO timestamp
+}
+
+export interface RestSession {
+  id: string;
+  sessionId?: string;           // 关联的单次 WorkSession ID
+  startTime: string;            // HH:mm (24h format, e.g. "15:30")
+  endTime: string;              // HH:mm (24h format, e.g. "15:35")
+  durationMinutes: number;
+  recordedAt: string;           // ISO timestamp
+}
+
+export interface PendingRestPrompt {
+  taskId: string;
+  taskTitle: string;
+  date: string;
+  hours: number;
+  wasCompleted: boolean;
+  sessionId?: string;
+}
+
 export interface TaskItem {
   id: string;
   title: string;
@@ -11,6 +41,7 @@ export interface TaskItem {
   startDate: string | null;      // 首次产生有效打卡或进入“进行中”的日期
   completedDate: string | null;  // 进入“已完成”状态的日期
   totalHours?: number;           // 累计时间（单位：小时，显示一位小数）
+  totalRestMinutes?: number;     // 累计事后休息时间（单位：分钟）
   createdAt: string;
   updatedAt: string;
 }
@@ -22,6 +53,9 @@ export interface DailyLog {
   progressType: ProgressType;    // 无实质进展/休息 | 有实质推进 | 通关/全量完成
   hours?: number;                // 本次打卡投入时间（小时，支持一位小数，如 1.5）
   note?: string;                 // 日志备注（如“通关第3章”）
+  workSessions?: WorkSession[];  // 当日每次汇报的推进时段记录
+  restSessions?: RestSession[];  // 当日事后休息时段记录
+  totalRestMinutes?: number;     // 当日累计休息时长（分钟）
   createdAt: string;
 }
 

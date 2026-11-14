@@ -11,6 +11,8 @@ import {
   FileText,
   Sparkles,
   Info,
+  Coffee,
+  Plus,
 } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 import { ProgressType, PROGRESS_TYPE_CONFIG } from '../types';
@@ -22,6 +24,7 @@ import {
   diffInDays,
   formatHours,
 } from '../utils/date';
+import { extractLogWorkIntervals } from '../utils/timeDistribution';
 
 export const QuickCheckInModal: React.FC = () => {
   const {
@@ -29,28 +32,34 @@ export const QuickCheckInModal: React.FC = () => {
     checkInModalDate,
     closeCheckInModal,
     addOrUpdateLog,
+    deleteWorkSession,
     deleteLog,
     getLog,
     getTaskTotalHours,
     showToast,
+    setPendingRestPrompt,
   } = useTaskContext();
 
   const task = checkInModalTask;
   const initialDate = checkInModalDate || getTodayString();
 
   const [selectedDate, setSelectedDate] = useState<string>(initialDate);
+  const [mode, setMode] = useState<'append' | 'replace'>('append');
   const [progressType, setProgressType] = useState<ProgressType>('progress');
   const [note, setNote] = useState<string>('');
   const [hours, setHours] = useState<string>('');
+  const [restMinutes, setRestMinutes] = useState<string>('');
   const [markAsCompleted, setMarkAsCompleted] = useState<boolean>(false);
   const [existingLogId, setExistingLogId] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
+  const lastModalInitKeyRef = useRef<string>('');
 
   const todayStr = getTodayString();
   const yesterdayStr = getYesterdayString();
 
   // Synchronize selectedDate when checkInModalDate or checkInModalTask changes
   useEffect(() => {
+    lastModalInitKeyRef.current = '';
     if (checkInModalDate) {
       setSelectedDate(checkInModalDate);
     } else {
@@ -58,30 +67,45 @@ export const QuickCheckInModal: React.FC = () => {
     }
   }, [checkInModalDate, checkInModalTask]);
 
+  const applyModeToForm = (targetMode: 'append' | 'replace', existing: ReturnType<typeof getLog>, taskStatus?: string) => {
+    setMode(targetMode);
+    setRestMinutes('');
+    if (existing && targetMode === 'replace') {
+      setProgressType(existing.progressType);
+      setNote(existing.note || '');
+      setHours(
+        typeof existing.hours === 'number' && !isNaN(existing.hours)
+          ? String(existing.hours)
+          : ''
+      );
+      setMarkAsCompleted(existing.progressType === 'completed' || taskStatus === 'done');
+    } else {
+      setProgressType('progress');
+      setNote('');
+      setHours('');
+      setMarkAsCompleted(false);
+    }
+  };
+
   // Load existing log for the selected date
   useEffect(() => {
     isSubmittingRef.current = false;
-    if (task && selectedDate) {
+    if (!task) {
+      lastModalInitKeyRef.current = '';
+      return;
+    }
+    if (selectedDate) {
       const existing = getLog(task.id, selectedDate);
-      if (existing) {
-        setProgressType(existing.progressType);
-        setNote(existing.note || '');
-        setHours(
-          typeof existing.hours === 'number' && !isNaN(existing.hours)
-            ? String(existing.hours)
-            : ''
-        );
-        setExistingLogId(existing.id);
-        setMarkAsCompleted(existing.progressType === 'completed' || task.status === 'done');
-      } else {
-        setProgressType('progress');
-        setNote('');
-        setHours('');
-        setExistingLogId(null);
-        setMarkAsCompleted(false);
+      setExistingLogId(existing ? existing.id : null);
+      const initKey = `${task.id}:${selectedDate}`;
+      if (lastModalInitKeyRef.current !== initKey) {
+        lastModalInitKeyRef.current = initKey;
+        const defaultMode: 'append' | 'replace' =
+          existing && selectedDate === todayStr ? 'append' : 'replace';
+        applyModeToForm(defaultMode, existing, task.status);
       }
     }
-  }, [task, selectedDate, getLog]);
+  }, [task, selectedDate, todayStr, getLog]);
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -91,23 +115,52 @@ export const QuickCheckInModal: React.FC = () => {
 
     const effectiveType = markAsCompleted ? 'completed' : progressType;
     const parsedHours = hours.trim() !== '' ? parseFloat(hours) : undefined;
+    const validHours = parsedHours !== undefined && !isNaN(parsedHours) ? parsedHours : undefined;
+    const parsedRest = restMinutes.trim() !== '' ? parseInt(restMinutes, 10) : undefined;
+    const validRest = parsedRest !== undefined && !isNaN(parsedRest) && parsedRest > 0 ? parsedRest : undefined;
+    const isCompleted = markAsCompleted || effectiveType === 'completed';
+    const submitMode: 'append' | 'replace' = existingLogId ? mode : 'replace';
 
-    addOrUpdateLog({
+    const savedLog = addOrUpdateLog({
       taskId: task.id,
       date: selectedDate,
       progressType: effectiveType,
-      hours: parsedHours !== undefined && !isNaN(parsedHours) ? parsedHours : undefined,
+      hours: validHours,
       note: note.trim(),
-      markTaskAsCompleted: markAsCompleted || effectiveType === 'completed',
+      markTaskAsCompleted: isCompleted,
+      mode: submitMode,
+      restMinutes: validRest,
     });
+
+    const latestSession = savedLog.workSessions?.[savedLog.workSessions.length - 1];
 
     showToast(
       existingLogId
-        ? `已更新「${task.title}」${selectedDate} 的打卡详情`
+        ? submitMode === 'append'
+          ? `已为「${task.title}」${selectedDate} 追加一条新记录`
+          : `已更新「${task.title}」${selectedDate} 的打卡详情`
         : `已为「${task.title}」添加 ${selectedDate} 打卡记录`,
       'success',
       true
     );
+
+    if (
+      selectedDate === todayStr &&
+      effectiveType !== 'rest' &&
+      validHours !== undefined &&
+      validHours > 0.3 &&
+      !validRest
+    ) {
+      setPendingRestPrompt({
+        taskId: task.id,
+        taskTitle: task.title,
+        date: selectedDate,
+        hours: validHours,
+        wasCompleted: isCompleted,
+        sessionId: latestSession?.id,
+      });
+    }
+
     closeCheckInModal();
   };
 
@@ -269,24 +322,39 @@ export const QuickCheckInModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Current Log Overview Card (查看当前详情) */}
+            {/* Current Log Overview Card (查看当前详情 & 模式切换) */}
             {currentLog ? (
-              <div className="p-3.5 rounded-xl border border-blue-200/80 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 space-y-2">
-                <div className="flex items-center justify-between text-xs">
+              <div className="p-3.5 rounded-xl border border-blue-200/80 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
                   <span className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-blue-500" />
-                    <span>该方格当前已存详情</span>
+                    <span>该日已登记记录</span>
                   </span>
-                  <span className="text-[11px] text-zinc-400">
-                    {currentLog.createdAt
-                      ? `登记于 ${new Date(currentLog.createdAt).toLocaleString('zh-CN', {
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}`
-                      : '已记录'}
-                  </span>
+                  <div className="inline-flex items-center p-0.5 rounded-lg bg-white/80 dark:bg-zinc-900 border border-blue-200/70 dark:border-blue-800/60 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => applyModeToForm('append', currentLog, task.status)}
+                      className={`px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer flex items-center gap-1 ${
+                        mode === 'append'
+                          ? 'bg-amber-600 text-white'
+                          : 'text-zinc-600 dark:text-zinc-300 hover:text-amber-600'
+                      }`}
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>追加新记录</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyModeToForm('replace', currentLog, task.status)}
+                      className={`px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer ${
+                        mode === 'replace'
+                          ? 'bg-amber-600 text-white'
+                          : 'text-zinc-600 dark:text-zinc-300 hover:text-amber-600'
+                      }`}
+                    >
+                      修改当日汇总
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
@@ -305,7 +373,7 @@ export const QuickCheckInModal: React.FC = () => {
                   {typeof currentLog.hours === 'number' && currentLog.hours > 0 && (
                     <span className="inline-flex items-center gap-1 text-xs text-sky-700 dark:text-sky-300 font-semibold bg-sky-50 dark:bg-sky-950/60 px-2.5 py-1 rounded-lg border border-sky-200 dark:border-sky-800">
                       <Clock className="w-3.5 h-3.5 text-sky-500" />
-                      <span>投入 {formatHours(currentLog.hours)}</span>
+                      <span>当日合计 {formatHours(currentLog.hours)}</span>
                     </span>
                   )}
                   {getTaskTotalHours(task.id, selectedDate) > 0 && (
@@ -313,26 +381,72 @@ export const QuickCheckInModal: React.FC = () => {
                       <span>截至该日累计: {formatHours(getTaskTotalHours(task.id, selectedDate))}</span>
                     </span>
                   )}
-                  {currentLog.progressType === 'completed' && (
-                    <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>标志通关完成</span>
-                    </span>
-                  )}
                 </div>
 
-                {currentLog.note ? (
-                  <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-800/80 border border-zinc-200/60 dark:border-zinc-700/60 text-xs text-zinc-700 dark:text-zinc-200 leading-relaxed break-words">
-                    <span className="font-medium text-zinc-500 dark:text-zinc-400 mr-1.5">
-                      打卡备注:
-                    </span>
-                    {currentLog.note}
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-zinc-400 italic">
-                    暂无文字备注，可在下方直接修改补充
-                  </div>
-                )}
+                {(() => {
+                  const daySessions = extractLogWorkIntervals(currentLog);
+                  if (daySessions.length === 0) {
+                    return currentLog.note ? (
+                      <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-800/80 border border-zinc-200/60 dark:border-zinc-700/60 text-xs text-zinc-700 dark:text-zinc-200 leading-relaxed break-words">
+                        <span className="font-medium text-zinc-500 dark:text-zinc-400 mr-1.5">
+                          打卡备注:
+                        </span>
+                        {currentLog.note}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-zinc-400 italic">
+                        暂无文字备注，可在下方追加或修改
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="space-y-1.5">
+                      {daySessions.map((iv, sIdx) => (
+                        <div
+                          key={iv.id}
+                          className="px-2.5 py-1.5 rounded-lg bg-white/90 dark:bg-zinc-800/80 border border-zinc-200/70 dark:border-zinc-700/60 flex items-center justify-between gap-2 text-[11px]"
+                        >
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono font-bold text-amber-700 dark:text-amber-300">
+                                #{sIdx + 1}
+                              </span>
+                              <span className="font-mono text-sky-700 dark:text-sky-300">
+                                {iv.startTime}-{iv.endTime}
+                              </span>
+                              <span className="font-mono font-bold text-blue-600 dark:text-blue-300">
+                                {formatHours(iv.hours)}
+                              </span>
+                              {iv.restSessions.map((rs) => (
+                                <span
+                                  key={rs.id}
+                                  className="font-mono px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60"
+                                >
+                                  ☕ 休{rs.durationMinutes}m
+                                </span>
+                              ))}
+                            </div>
+                            {iv.note && (
+                              <div className="text-zinc-600 dark:text-zinc-300 truncate">
+                                {iv.note}
+                              </div>
+                            )}
+                          </div>
+                          {!iv.isEstimated && (
+                            <button
+                              type="button"
+                              onClick={() => deleteWorkSession(task.id, selectedDate, iv.id)}
+                              className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer shrink-0"
+                              title="删除该条分段记录"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <div className="p-3 rounded-xl bg-zinc-50/60 dark:bg-zinc-800/30 border border-dashed border-zinc-200 dark:border-zinc-800 text-center py-3.5">
@@ -345,7 +459,11 @@ export const QuickCheckInModal: React.FC = () => {
             {/* Progress Type options (修改/选择状态) */}
             <div>
               <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">
-                {currentLog ? '修改方格状态' : '选择打卡状态'}
+                {currentLog
+                  ? mode === 'append'
+                    ? '选择本次追加记录状态'
+                    : '修改当日汇总状态'
+                  : '选择打卡状态'}
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {(['progress', 'rest', 'completed'] as ProgressType[]).map((type) => {
@@ -435,6 +553,52 @@ export const QuickCheckInModal: React.FC = () => {
               </div>
             </div>
 
+            {/* Independent Rest Minutes Input (Optional) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  <Coffee className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>本次休息时长 (分钟，可选)</span>
+                </label>
+                <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                  留空且当日&gt;0.3h时自动呼出表盘
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    max="240"
+                    placeholder="如 5"
+                    value={restMinutes}
+                    onChange={(e) => setRestMinutes(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs sm:text-sm font-mono bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 pr-10"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400 dark:text-zinc-500 select-none">
+                    分钟
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {[5, 10, 15, 20].map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => setRestMinutes((prev) => (prev === String(mins) ? '' : String(mins)))}
+                      className={`px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
+                        restMinutes === String(mins)
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 font-semibold shadow-xs'
+                          : 'bg-zinc-50 dark:bg-zinc-800/60 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700/60'
+                      }`}
+                    >
+                      {mins}m
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Note text field (修改/填入心得备注) */}
             <div>
               <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
@@ -503,7 +667,9 @@ export const QuickCheckInModal: React.FC = () => {
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 active:scale-[0.98] rounded-xl shadow-xs transition-all cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>{existingLogId ? '保存修改' : '保存打卡'}</span>
+                  <span>
+                    {existingLogId ? (mode === 'append' ? '追加记录' : '保存修改') : '保存打卡'}
+                  </span>
                 </button>
               </div>
             </div>
