@@ -38,6 +38,8 @@ import {
   Minimize2,
   Coffee,
   Play,
+  Pause,
+  SkipForward,
   RotateCcw,
   Timer,
 } from 'lucide-react';
@@ -96,6 +98,7 @@ type DialogueMode =
   | 'select_checkin_task'
   | 'inspect_task'
   | 'checkin_form'
+  | 'pomodoro'
   | 'rest_prompt'
   | 'rest_dial'
   | 'rest_countdown'
@@ -105,6 +108,92 @@ type DialogueMode =
   | 'random_pick'
   | 'stale_review'
   | 'sync_menu';
+
+type PomodoroPhase = 'focus' | 'short_break' | 'long_break';
+type PomodoroRunState = 'idle' | 'running' | 'paused';
+
+interface DailyPomodoroStats {
+  date: string;
+  count: number;
+  minutes: number;
+}
+
+const POMODORO_DAILY_STORAGE_KEY = 'questkeeper_pomodoro_daily_v1';
+
+function loadDailyPomodoroStats(today: string): DailyPomodoroStats {
+  try {
+    const raw = localStorage.getItem(POMODORO_DAILY_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<DailyPomodoroStats>;
+      if (
+        parsed.date === today &&
+        typeof parsed.count === 'number' &&
+        typeof parsed.minutes === 'number'
+      ) {
+        return {
+          date: today,
+          count: Math.max(0, parsed.count),
+          minutes: Math.max(0, parsed.minutes),
+        };
+      }
+    }
+  } catch {
+    // Ignore storage read failures
+  }
+  return { date: today, count: 0, minutes: 0 };
+}
+
+function saveDailyPomodoroStats(stats: DailyPomodoroStats): void {
+  try {
+    localStorage.setItem(POMODORO_DAILY_STORAGE_KEY, JSON.stringify(stats));
+  } catch {
+    // Ignore storage write failures
+  }
+}
+
+function playPomodoroChime(kind: 'focus_done' | 'break_done'): void {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notes =
+      kind === 'focus_done'
+        ? [523.25, 659.25, 783.99, 1046.5]
+        : [392.0, 493.88, 587.33, 783.99];
+    const startAt = ctx.currentTime + 0.02;
+
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = kind === 'focus_done' ? 'triangle' : 'sine';
+      osc.frequency.setValueAtTime(freq, startAt + idx * 0.12);
+
+      gain.gain.setValueAtTime(0.0001, startAt + idx * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.14, startAt + idx * 0.12 + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + idx * 0.12 + 0.42);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startAt + idx * 0.12);
+      osc.stop(startAt + idx * 0.12 + 0.45);
+    });
+
+    window.setTimeout(() => {
+      ctx.close().catch(() => {});
+    }, 1500);
+  } catch {
+    // Ignore audio context errors when autoplay is restricted
+  }
+}
+
+function formatCountdownMMSS(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
 interface FloatingHeart {
   id: number;
@@ -151,6 +240,191 @@ function describeDialWedge(cx: number, cy: number, r: number, angleDeg: number):
   const largeArc = clamped > 180 ? 1 : 0;
   return `M ${cx} ${cy} L ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)} Z`;
 }
+
+function clientPointToDialMinutes(
+  svg: SVGSVGElement | null,
+  clientX: number,
+  clientY: number,
+  maxMinutes: number = 60
+): number | null {
+  if (!svg) return null;
+  const rect = svg.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = clientX - cx;
+  const dy = clientY - cy;
+  const angleDeg = ((Math.atan2(dy, dx) * 180) / Math.PI + 90 + 360) % 360;
+  const rawMins = Math.round(angleDeg / 6);
+  return rawMins === 0 ? Math.min(60, maxMinutes) : Math.max(1, Math.min(maxMinutes, rawMins));
+}
+
+interface PocketWatchDialProps {
+  dialRef: React.RefObject<SVGSVGElement | null>;
+  dialAngle: number;
+  activeMinuteMarker: number | null;
+  accent: 'emerald' | 'rose';
+  interactive: boolean;
+  isDragging: boolean;
+  onDraggingChange: (dragging: boolean) => void;
+  onUpdatePoint: (clientX: number, clientY: number) => void;
+}
+
+const DIAL_NUMERALS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+
+/** Shared interactive SVG pocket-watch dial for rest timer and Pomodoro phases. */
+const PocketWatchDialSvg: React.FC<PocketWatchDialProps> = ({
+  dialRef,
+  dialAngle,
+  activeMinuteMarker,
+  accent,
+  interactive,
+  isDragging,
+  onDraggingChange,
+  onUpdatePoint,
+}) => {
+  const isRose = accent === 'rose';
+  const strokeHex = isRose ? '#e11d48' : '#10b981';
+  const wedgeRgba = isRose ? 'rgba(225, 29, 72, 0.20)' : 'rgba(16, 185, 129, 0.22)';
+  const handTip = dialPolarPoint(110, 110, 62, dialAngle);
+
+  return (
+    <svg
+      ref={dialRef}
+      viewBox="0 0 220 220"
+      className={`w-56 h-56 sm:w-60 sm:h-60 select-none touch-none drop-shadow-md ${
+        interactive ? 'cursor-pointer' : 'cursor-default'
+      }`}
+      style={{ touchAction: 'none' }}
+      onPointerDown={(e) => {
+        if (!interactive) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        onDraggingChange(true);
+        onUpdatePoint(e.clientX, e.clientY);
+      }}
+      onPointerMove={(e) => {
+        if (interactive && isDragging) {
+          onUpdatePoint(e.clientX, e.clientY);
+        }
+      }}
+      onPointerUp={() => onDraggingChange(false)}
+      onPointerCancel={() => onDraggingChange(false)}
+    >
+      {/* Outer Watch Frame */}
+      <circle
+        cx={110}
+        cy={110}
+        r={104}
+        className="fill-amber-950/90 dark:fill-[#140e09] stroke-amber-500/60"
+        strokeWidth={3}
+      />
+      <circle
+        cx={110}
+        cy={110}
+        r={94}
+        className="fill-[#fdf6e7] dark:fill-[#241b13] stroke-amber-700/35"
+        strokeWidth={1.5}
+      />
+
+      {/* Selected / Remaining Duration Wedge & Progress Arc */}
+      {dialAngle >= 359.5 ? (
+        <circle
+          cx={110}
+          cy={110}
+          r={80}
+          fill={wedgeRgba}
+          stroke={strokeHex}
+          strokeWidth={6}
+        />
+      ) : (
+        <>
+          <path d={describeDialWedge(110, 110, 80, dialAngle)} fill={wedgeRgba} />
+          <path
+            d={describeDialArc(110, 110, 80, dialAngle)}
+            fill="none"
+            stroke={strokeHex}
+            strokeWidth={6}
+            strokeLinecap="round"
+          />
+        </>
+      )}
+
+      {/* 60 Tick Marks */}
+      {Array.from({ length: 60 }, (_, idx) => {
+        const deg = idx * 6;
+        const isMajor = idx % 5 === 0;
+        const p1 = dialPolarPoint(110, 110, isMajor ? 89 : 88, deg);
+        const p2 = dialPolarPoint(110, 110, isMajor ? 79 : 83, deg);
+        return (
+          <line
+            key={idx}
+            x1={p1.x}
+            y1={p1.y}
+            x2={p2.x}
+            y2={p2.y}
+            className={
+              isMajor
+                ? 'stroke-amber-900 dark:stroke-amber-200'
+                : 'stroke-amber-800/35 dark:stroke-amber-400/30'
+            }
+            strokeWidth={isMajor ? 2 : 1}
+            strokeLinecap="round"
+          />
+        );
+      })}
+
+      {/* Major Dial Numerals */}
+      {DIAL_NUMERALS.map((num) => {
+        const pos = dialPolarPoint(110, 110, 67, num * 6);
+        const active = activeMinuteMarker === num;
+        return (
+          <text
+            key={num}
+            x={pos.x}
+            y={pos.y}
+            textAnchor="middle"
+            dominantBaseline="central"
+            className={`text-[10px] font-mono font-bold pointer-events-none ${
+              active
+                ? isRose
+                  ? 'fill-rose-700 dark:fill-rose-300'
+                  : 'fill-emerald-700 dark:fill-emerald-300'
+                : 'fill-stone-600 dark:fill-amber-200/75'
+            }`}
+          >
+            {num}
+          </text>
+        );
+      })}
+
+      {/* Dial Hand */}
+      <line
+        x1={110}
+        y1={110}
+        x2={handTip.x}
+        y2={handTip.y}
+        stroke="#d97706"
+        strokeWidth={3.5}
+        strokeLinecap="round"
+      />
+      <circle
+        cx={handTip.x}
+        cy={handTip.y}
+        r={7}
+        className={`${
+          isRose ? 'fill-rose-500' : 'fill-emerald-500'
+        } stroke-white dark:stroke-stone-900`}
+        strokeWidth={2}
+      />
+      <circle
+        cx={110}
+        cy={110}
+        r={6}
+        className="fill-amber-600 stroke-amber-100"
+        strokeWidth={2}
+      />
+    </svg>
+  );
+};
 
 export const KanbanView: React.FC = () => {
   const {
@@ -330,6 +604,39 @@ export const KanbanView: React.FC = () => {
     durationMinutes: number;
   } | null>(null);
 
+  // ── Pomodoro Timer State ───────────────────────────────────────────────────
+  const [pomodoroPhase, setPomodoroPhase] = useState<PomodoroPhase>('focus');
+  const [pomodoroRunState, setPomodoroRunState] = useState<PomodoroRunState>('idle');
+  const [pomodoroFocusMinutes, setPomodoroFocusMinutes] = useState<number>(25);
+  const [pomodoroShortBreakMinutes, setPomodoroShortBreakMinutes] = useState<number>(5);
+  const [pomodoroLongBreakMinutes, setPomodoroLongBreakMinutes] = useState<number>(15);
+  const [pomodoroTaskId, setPomodoroTaskId] = useState<string | null>(null);
+  const [pomodoroNote, setPomodoroNote] = useState<string>('');
+  const [pomodoroAutoRecord, setPomodoroAutoRecord] = useState<boolean>(true);
+  const [pomodoroTargetEndMs, setPomodoroTargetEndMs] = useState<number | null>(null);
+  const [pomodoroRemainingSeconds, setPomodoroRemainingSeconds] = useState<number>(25 * 60);
+  const [pomodoroStartedAtStr, setPomodoroStartedAtStr] = useState<string>('');
+  const [pomodoroStartedAtMs, setPomodoroStartedAtMs] = useState<number | null>(null);
+  const [pomodoroElapsedCarryMs, setPomodoroElapsedCarryMs] = useState<number>(0);
+  const [pomodoroLastWorkSessionId, setPomodoroLastWorkSessionId] = useState<string | undefined>(
+    undefined
+  );
+  const [pomodoroDailyStats, setPomodoroDailyStats] = useState<DailyPomodoroStats>(() =>
+    loadDailyPomodoroStats(todayStr)
+  );
+  const [pomodoroShowAllTasks, setPomodoroShowAllTasks] = useState<boolean>(false);
+  const [pomodoroLastSummary, setPomodoroLastSummary] = useState<{
+    phase: PomodoroPhase;
+    minutes: number;
+    taskTitle?: string;
+    startTime: string;
+    endTime: string;
+    autoRecorded: boolean;
+  } | null>(null);
+  const [isDraggingPomodoroDial, setIsDraggingPomodoroDial] = useState<boolean>(false);
+  const pomodoroDialSvgRef = useRef<SVGSVGElement | null>(null);
+  const pomodoroCompletedGuardRef = useRef<boolean>(false);
+
   // ── Inline Create / Edit Task Form State ───────────────────────────────────
   const [formTitle, setFormTitle] = useState('');
   const [formStatus, setFormStatus] = useState<TaskStatus>('in_progress');
@@ -459,6 +766,9 @@ export const KanbanView: React.FC = () => {
     const prevToday = lastTodayStrRef.current;
     if (todayStr !== prevToday) {
       setCheckInDate((prev) => (prev === prevToday ? todayStr : prev));
+      const freshStats = loadDailyPomodoroStats(todayStr);
+      setPomodoroDailyStats(freshStats);
+      saveDailyPomodoroStats(freshStats);
       lastTodayStrRef.current = todayStr;
     }
 
@@ -590,17 +900,10 @@ export const KanbanView: React.FC = () => {
   }, [restTargetEndMs, finalizeRestSession]);
 
   const updateDialFromClientPoint = useCallback((clientX: number, clientY: number) => {
-    const svg = dialSvgRef.current;
-    if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = clientX - cx;
-    const dy = clientY - cy;
-    const angleDeg = ((Math.atan2(dy, dx) * 180) / Math.PI + 90 + 360) % 360;
-    const rawMins = Math.round(angleDeg / 6);
-    const snapped = rawMins === 0 ? 60 : Math.max(1, Math.min(60, rawMins));
-    setRestDurationMinutes(snapped);
+    const mins = clientPointToDialMinutes(dialSvgRef.current, clientX, clientY, 60);
+    if (mins !== null) {
+      setRestDurationMinutes(mins);
+    }
   }, []);
 
   const openRestDial = useCallback(
@@ -879,6 +1182,399 @@ export const KanbanView: React.FC = () => {
       return countB - countA;
     });
   }, [allTags, tasks]);
+
+  // ── Pomodoro Timer Derived State & Lifecycle Actions ───────────────────────
+  const activePomodoroTotalMinutes =
+    pomodoroPhase === 'focus'
+      ? pomodoroFocusMinutes
+      : pomodoroPhase === 'short_break'
+        ? pomodoroShortBreakMinutes
+        : pomodoroLongBreakMinutes;
+
+  const pomodoroBoundTask = useMemo(
+    () => (pomodoroTaskId ? tasks.find((t) => t.id === pomodoroTaskId) ?? null : null),
+    [pomodoroTaskId, tasks]
+  );
+
+  const pomodoroSelectableTasks = useMemo(() => {
+    const base = pomodoroShowAllTasks
+      ? tasks.filter((t) => t.status !== 'done')
+      : prioritizedInProgressTasks;
+    if (pomodoroBoundTask && !base.some((t) => t.id === pomodoroBoundTask.id)) {
+      return [pomodoroBoundTask, ...base];
+    }
+    return base;
+  }, [pomodoroShowAllTasks, tasks, prioritizedInProgressTasks, pomodoroBoundTask]);
+
+  const setActivePhaseMinutes = useCallback(
+    (mins: number) => {
+      const maxMins = pomodoroPhase === 'focus' ? 90 : 60;
+      const clamped = Math.max(1, Math.min(maxMins, Math.round(mins)));
+      if (pomodoroPhase === 'focus') {
+        setPomodoroFocusMinutes(clamped);
+      } else if (pomodoroPhase === 'short_break') {
+        setPomodoroShortBreakMinutes(clamped);
+      } else {
+        setPomodoroLongBreakMinutes(clamped);
+      }
+      if (pomodoroRunState === 'idle') {
+        setPomodoroRemainingSeconds(clamped * 60);
+      }
+    },
+    [pomodoroPhase, pomodoroRunState]
+  );
+
+  const updatePomodoroDialFromClientPoint = useCallback(
+    (clientX: number, clientY: number) => {
+      if (pomodoroRunState !== 'idle') return;
+      const mins = clientPointToDialMinutes(pomodoroDialSvgRef.current, clientX, clientY, 60);
+      if (mins !== null) {
+        setActivePhaseMinutes(mins);
+      }
+    },
+    [pomodoroRunState, setActivePhaseMinutes]
+  );
+
+  const switchPomodoroPhaseTab = useCallback(
+    (nextPhase: PomodoroPhase) => {
+      if (pomodoroRunState === 'running') {
+        showToast('计时进行中，请先暂停或重置后再切换阶段', 'info');
+        return;
+      }
+      pomodoroCompletedGuardRef.current = true;
+      setPomodoroRunState('idle');
+      setPomodoroTargetEndMs(null);
+      setPomodoroStartedAtMs(null);
+      setPomodoroElapsedCarryMs(0);
+      setPomodoroPhase(nextPhase);
+      const nextMins =
+        nextPhase === 'focus'
+          ? pomodoroFocusMinutes
+          : nextPhase === 'short_break'
+            ? pomodoroShortBreakMinutes
+            : pomodoroLongBreakMinutes;
+      setPomodoroRemainingSeconds(nextMins * 60);
+    },
+    [
+      pomodoroRunState,
+      pomodoroFocusMinutes,
+      pomodoroShortBreakMinutes,
+      pomodoroLongBreakMinutes,
+      showToast,
+    ]
+  );
+
+  const openPomodoroPanel = useCallback(() => {
+    setActiveOverlay('none');
+    setViewMode('kanban');
+    setDialogueMode('pomodoro');
+
+    if (pomodoroRunState === 'running') {
+      speak(
+        `番茄怀表正在滴答走动呢！当前${
+          pomodoroPhase === 'focus' ? '专注冲刺' : '休整休息'
+        }还剩 ${formatCountdownMMSS(pomodoroRemainingSeconds)}，保持节奏加油~`,
+        pomodoroPhase === 'focus' ? 'happy' : 'sleepy'
+      );
+    } else {
+      speak(
+        `欢迎来到「公会番茄怀表」台前！默认 25 分钟专注搭配 5 分钟短休，每满 4 颗番茄还会解锁一次 15 分钟长休整哦~`,
+        'happy'
+      );
+    }
+  }, [setViewMode, speak, pomodoroRunState, pomodoroPhase, pomodoroRemainingSeconds]);
+
+  const startPomodoroPhase = useCallback(
+    (overridePhase?: PomodoroPhase, overrideMinutes?: number) => {
+      const targetPhase = overridePhase ?? pomodoroPhase;
+      const baseMins =
+        targetPhase === 'focus'
+          ? pomodoroFocusMinutes
+          : targetPhase === 'short_break'
+            ? pomodoroShortBreakMinutes
+            : pomodoroLongBreakMinutes;
+      const safeMins = Math.max(
+        1,
+        Math.min(targetPhase === 'focus' ? 90 : 60, Math.round(overrideMinutes ?? baseMins))
+      );
+
+      if (overridePhase) {
+        setPomodoroPhase(targetPhase);
+      }
+      if (overrideMinutes !== undefined) {
+        if (targetPhase === 'focus') setPomodoroFocusMinutes(safeMins);
+        else if (targetPhase === 'short_break') setPomodoroShortBreakMinutes(safeMins);
+        else setPomodoroLongBreakMinutes(safeMins);
+      }
+
+      const nowMs = Date.now();
+      const nowStr = formatTimeHHMM(new Date(nowMs));
+      pomodoroCompletedGuardRef.current = false;
+      setPomodoroStartedAtStr(nowStr);
+      setPomodoroStartedAtMs(nowMs);
+      setPomodoroElapsedCarryMs(0);
+      setPomodoroRemainingSeconds(safeMins * 60);
+      setPomodoroTargetEndMs(nowMs + safeMins * 60_000);
+      setPomodoroRunState('running');
+      setPomodoroLastSummary(null);
+
+      if (targetPhase === 'focus') {
+        speak(
+          pomodoroBoundTask
+            ? `🍅 专注计时启动（${safeMins} 分钟）！本次目标委托：《${pomodoroBoundTask.title}》，全神贯注冲刺吧，结束时我会为你盖章记账~`
+            : `🍅 专注计时启动（${safeMins} 分钟）！心无旁骛地投入这段时光吧，倒计时归零时我会敲响提醒钟~`,
+          'happy'
+        );
+      } else {
+        speak(
+          `☕ 开始${targetPhase === 'long_break' ? '长休整' : '短休整'}倒计时（${safeMins} 分钟）~ 起身伸展一下、补充些水分，让精力满格恢复吧！`,
+          'sleepy'
+        );
+      }
+    },
+    [
+      pomodoroPhase,
+      pomodoroFocusMinutes,
+      pomodoroShortBreakMinutes,
+      pomodoroLongBreakMinutes,
+      pomodoroBoundTask,
+      speak,
+    ]
+  );
+
+  const pausePomodoro = useCallback(() => {
+    if (pomodoroRunState !== 'running') return;
+    const remSec =
+      pomodoroTargetEndMs !== null
+        ? Math.max(1, Math.ceil((pomodoroTargetEndMs - Date.now()) / 1000))
+        : pomodoroRemainingSeconds;
+    const legMs = pomodoroStartedAtMs !== null ? Math.max(0, Date.now() - pomodoroStartedAtMs) : 0;
+    setPomodoroElapsedCarryMs((prev) => prev + legMs);
+    setPomodoroStartedAtMs(null);
+    setPomodoroTargetEndMs(null);
+    setPomodoroRemainingSeconds(remSec);
+    setPomodoroRunState('paused');
+    speak(`已按住怀表表冠暂停计时（剩余 ${formatCountdownMMSS(remSec)}），准备好随时继续~`, 'thinking');
+  }, [pomodoroRunState, pomodoroTargetEndMs, pomodoroRemainingSeconds, pomodoroStartedAtMs, speak]);
+
+  const resumePomodoro = useCallback(() => {
+    if (pomodoroRunState !== 'paused') return;
+    const nowMs = Date.now();
+    pomodoroCompletedGuardRef.current = false;
+    setPomodoroStartedAtMs(nowMs);
+    setPomodoroTargetEndMs(nowMs + pomodoroRemainingSeconds * 1000);
+    setPomodoroRunState('running');
+    speak(
+      `怀表重新走字啦！还剩 ${formatCountdownMMSS(pomodoroRemainingSeconds)}，继续稳步推进吧~`,
+      pomodoroPhase === 'focus' ? 'happy' : 'sleepy'
+    );
+  }, [pomodoroRunState, pomodoroRemainingSeconds, pomodoroPhase, speak]);
+
+  const resetPomodoro = useCallback(() => {
+    pomodoroCompletedGuardRef.current = true;
+    setPomodoroRunState('idle');
+    setPomodoroTargetEndMs(null);
+    setPomodoroStartedAtMs(null);
+    setPomodoroElapsedCarryMs(0);
+    setPomodoroRemainingSeconds(activePomodoroTotalMinutes * 60);
+    speak(`已将番茄怀表拨回 ${activePomodoroTotalMinutes} 分钟刻度，随时可以重新起步~`, 'normal');
+  }, [activePomodoroTotalMinutes, speak]);
+
+  const extendPomodoro = useCallback(
+    (extraMinutes: number) => {
+      const addSec = extraMinutes * 60;
+      setPomodoroRemainingSeconds((prev) => prev + addSec);
+      if (pomodoroRunState === 'running') {
+        setPomodoroTargetEndMs((prev) => (prev ?? Date.now()) + addSec * 1000);
+      }
+      speak(`已为当前计时追加 ${extraMinutes} 分钟，保持好手感继续加油~`, 'happy');
+    },
+    [pomodoroRunState, speak]
+  );
+
+  const completePomodoroPhase = useCallback(
+    (isEarlySettlement: boolean = false) => {
+      if (pomodoroCompletedGuardRef.current) return;
+      pomodoroCompletedGuardRef.current = true;
+
+      const currentLegMs =
+        pomodoroStartedAtMs !== null ? Math.max(0, Date.now() - pomodoroStartedAtMs) : 0;
+      const totalElapsedMs = pomodoroElapsedCarryMs + currentLegMs;
+      const elapsedMinutesExact = Math.round(totalElapsedMs / 60_000);
+      const actualMinutes = isEarlySettlement
+        ? Math.max(
+            1,
+            elapsedMinutesExact ||
+              Math.round((activePomodoroTotalMinutes * 60 - pomodoroRemainingSeconds) / 60)
+          )
+        : Math.max(activePomodoroTotalMinutes, elapsedMinutesExact || activePomodoroTotalMinutes);
+
+      const now = new Date();
+      const endStr = formatTimeHHMM(now);
+      const startStr =
+        pomodoroStartedAtStr ||
+        formatTimeHHMM(new Date(now.getTime() - actualMinutes * 60_000));
+
+      setPomodoroRunState('idle');
+      setPomodoroTargetEndMs(null);
+      setPomodoroStartedAtMs(null);
+      setPomodoroElapsedCarryMs(0);
+
+      playPomodoroChime(pomodoroPhase === 'focus' ? 'focus_done' : 'break_done');
+
+      if (pomodoroPhase === 'focus') {
+        const currentDaily =
+          pomodoroDailyStats.date === todayStr
+            ? pomodoroDailyStats
+            : { date: todayStr, count: 0, minutes: 0 };
+        const nextCount = currentDaily.count + 1;
+        const nextStats: DailyPomodoroStats = {
+          date: todayStr,
+          count: nextCount,
+          minutes: currentDaily.minutes + actualMinutes,
+        };
+        setPomodoroDailyStats(nextStats);
+        saveDailyPomodoroStats(nextStats);
+
+        setAffection((prev) => {
+          const next = prev + 3;
+          saveAffectionPoints(next);
+          return next;
+        });
+
+        let didAutoRecord = false;
+        if (pomodoroBoundTask && pomodoroAutoRecord) {
+          const hoursVal = Math.max(0.1, Math.round((actualMinutes / 60) * 100) / 100);
+          const trimmedNote = pomodoroNote.trim();
+          const noteText = trimmedNote
+            ? `🍅 番茄专注 ${actualMinutes}m：${trimmedNote}`
+            : `🍅 番茄专注 ${actualMinutes} 分钟`;
+
+          const savedLog = addOrUpdateLog({
+            taskId: pomodoroBoundTask.id,
+            date: todayStr,
+            progressType: 'progress',
+            hours: hoursVal,
+            note: noteText,
+            mode: 'append',
+            sessionStartTime: startStr,
+            sessionEndTime: endStr,
+          });
+          const latestWs = savedLog.workSessions?.[savedLog.workSessions.length - 1];
+          setPomodoroLastWorkSessionId(latestWs?.id);
+          setPomodoroNote('');
+          didAutoRecord = true;
+          showToast(
+            `🍅 番茄专注完成！已为「${pomodoroBoundTask.title}」记入 ${actualMinutes} 分钟 (${formatHours(hoursVal)})`,
+            'success',
+            true
+          );
+        } else {
+          showToast(
+            `🍅 番茄专注完成（${actualMinutes} 分钟）！今日第 ${nextCount} 颗番茄已收获`,
+            'success',
+            true
+          );
+        }
+
+        const isLongBreakTurn = nextCount % 4 === 0;
+        const nextBreakPhase: PomodoroPhase = isLongBreakTurn ? 'long_break' : 'short_break';
+        const nextBreakMins = isLongBreakTurn
+          ? pomodoroLongBreakMinutes
+          : pomodoroShortBreakMinutes;
+
+        setPomodoroPhase(nextBreakPhase);
+        setPomodoroRemainingSeconds(nextBreakMins * 60);
+        setPomodoroLastSummary({
+          phase: 'focus',
+          minutes: actualMinutes,
+          taskTitle: pomodoroBoundTask?.title,
+          startTime: startStr,
+          endTime: endStr,
+          autoRecorded: didAutoRecord,
+        });
+
+        speak(
+          isLongBreakTurn
+            ? `叮咚🎉！第 ${nextCount} 颗番茄收割完毕（本轮专注 ${actualMinutes} 分钟）！今天已经攒满整整 4 轮啦，我为你切好了 ${nextBreakMins} 分钟长休整表盘，彻底放松一下吧~`
+            : `叮铃~ 番茄专注圆满达成（${actualMinutes} 分钟，今日第 ${nextCount} 颗）！${
+                didAutoRecord && pomodoroBoundTask
+                  ? `已经自动写入《${pomodoroBoundTask.title}》今日打卡并盖章入账。`
+                  : ''
+              }现在切到 ${nextBreakMins} 分钟短休整啦，按下「开始短休整」喘口气吧！`,
+          'cheer'
+        );
+      } else {
+        if (pomodoroBoundTask) {
+          addRestSession(pomodoroBoundTask.id, todayStr, {
+            startTime: startStr,
+            endTime: endStr,
+            durationMinutes: actualMinutes,
+            sessionId: pomodoroLastWorkSessionId,
+          });
+          showToast(
+            `☕ 休整结束！已将 ${actualMinutes} 分钟休息记入「${pomodoroBoundTask.title}」`,
+            'info',
+            true
+          );
+        } else {
+          showToast(`☕ 休整结束（${actualMinutes} 分钟），准备好迎接下一轮专注啦！`, 'info', true);
+        }
+
+        setPomodoroPhase('focus');
+        setPomodoroRemainingSeconds(pomodoroFocusMinutes * 60);
+        setPomodoroLastSummary({
+          phase: pomodoroPhase,
+          minutes: actualMinutes,
+          taskTitle: pomodoroBoundTask?.title,
+          startTime: startStr,
+          endTime: endStr,
+          autoRecorded: Boolean(pomodoroBoundTask),
+        });
+
+        speak(
+          `休整时间到啦（共休息 ${actualMinutes} 分钟）~ 表盘已为你复位回 ${pomodoroFocusMinutes} 分钟专注模式，随时可以开启下一轮番茄冲刺！`,
+          'happy'
+        );
+      }
+    },
+    [
+      pomodoroStartedAtMs,
+      pomodoroElapsedCarryMs,
+      activePomodoroTotalMinutes,
+      pomodoroRemainingSeconds,
+      pomodoroStartedAtStr,
+      pomodoroPhase,
+      pomodoroDailyStats,
+      todayStr,
+      pomodoroBoundTask,
+      pomodoroAutoRecord,
+      pomodoroNote,
+      addOrUpdateLog,
+      addRestSession,
+      pomodoroLastWorkSessionId,
+      pomodoroLongBreakMinutes,
+      pomodoroShortBreakMinutes,
+      pomodoroFocusMinutes,
+      showToast,
+      speak,
+    ]
+  );
+
+  // Live Pomodoro countdown tick driven by wall-clock target timestamp
+  useEffect(() => {
+    if (pomodoroRunState !== 'running' || pomodoroTargetEndMs === null) return;
+    const tick = () => {
+      const remSec = Math.max(0, Math.ceil((pomodoroTargetEndMs - Date.now()) / 1000));
+      setPomodoroRemainingSeconds(remSec);
+      if (remSec <= 0) {
+        completePomodoroPhase(false);
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 250);
+    return () => window.clearInterval(timer);
+  }, [pomodoroRunState, pomodoroTargetEndMs, completePomodoroPhase]);
 
   // ── Primary Navigation Switching ───────────────────────────────────────────
   const switchSection = (next: OverlayMode) => {
@@ -1454,6 +2150,13 @@ export const KanbanView: React.FC = () => {
           title: selectedTask ? `进度汇报柜台 · ${selectedTask.title}` : '进度汇报柜台',
           subtitle: '填写当日状态、投入时长与心得体会并盖章入账',
         };
+      case 'pomodoro':
+        return {
+          title: pomodoroBoundTask
+            ? `公会番茄怀表 · ${pomodoroBoundTask.title}`
+            : '公会番茄怀表 · 专注与休整',
+          subtitle: '专注倒计时自动盖章记入今日打卡，轮休结束后自动记录休息时段',
+        };
       case 'rest_prompt':
         return {
           title: '营地茶歇关怀 · 休息确认',
@@ -1507,7 +2210,7 @@ export const KanbanView: React.FC = () => {
           subtitle: '随时在此办理日常委托事务',
         };
     }
-  }, [dialogueMode, selectedTask]);
+  }, [dialogueMode, selectedTask, pomodoroBoundTask]);
 
   // Drive & Local sync dot color helpers
   const driveDotClass = !user
@@ -1727,6 +2430,49 @@ export const KanbanView: React.FC = () => {
                   {String(Math.floor(restRemainingSeconds / 60)).padStart(2, '0')}:
                   {String(restRemainingSeconds % 60).padStart(2, '0')}
                 </span>
+              </button>
+            )}
+
+            {pomodoroRunState !== 'idle' &&
+            (dialogueMode !== 'pomodoro' || activeOverlay !== 'none') ? (
+              <button
+                type="button"
+                onClick={() => openPomodoroPanel()}
+                className={`flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl text-white border text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer transition-colors ${
+                  pomodoroPhase === 'focus'
+                    ? pomodoroRunState === 'running'
+                      ? 'bg-rose-600/95 hover:bg-rose-500 border-rose-300/70 animate-pulse'
+                      : 'bg-amber-700/90 hover:bg-amber-600 border-amber-300/60'
+                    : pomodoroRunState === 'running'
+                      ? 'bg-emerald-600/95 hover:bg-emerald-500 border-emerald-300/70 animate-pulse'
+                      : 'bg-teal-700/90 hover:bg-teal-600 border-teal-300/60'
+                }`}
+                title="点击打开番茄钟倒计时面板"
+              >
+                <span>{pomodoroPhase === 'focus' ? '🍅' : '☕'}</span>
+                <span className="font-mono">{formatCountdownMMSS(pomodoroRemainingSeconds)}</span>
+                {pomodoroRunState === 'paused' && (
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-black/25">暂停</span>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openPomodoroPanel()}
+                className={`flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
+                  activeOverlay === 'none' && dialogueMode === 'pomodoro'
+                    ? 'bg-rose-600/90 text-white border-rose-300/70 shadow-sm'
+                    : 'bg-black/40 border-amber-600/30 text-amber-100/90 hover:bg-white/10'
+                }`}
+                title="打开公会番茄钟计时器"
+              >
+                <span>🍅</span>
+                <span className="hidden sm:inline">番茄钟</span>
+                {pomodoroDailyStats.date === todayStr && pomodoroDailyStats.count > 0 && (
+                  <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-rose-500/25 text-rose-200 font-mono">
+                    ×{pomodoroDailyStats.count}
+                  </span>
+                )}
               </button>
             )}
 
@@ -3851,145 +4597,16 @@ export const KanbanView: React.FC = () => {
                         <div className="flex flex-col lg:flex-row items-center gap-6 justify-center">
                           {/* Interactive SVG Pocket-Watch Dial */}
                           <div className="flex flex-col items-center gap-2 shrink-0">
-                            <svg
-                              ref={dialSvgRef}
-                              viewBox="0 0 220 220"
-                              className="w-56 h-56 sm:w-60 sm:h-60 select-none cursor-pointer touch-none drop-shadow-md"
-                              style={{ touchAction: 'none' }}
-                              onPointerDown={(e) => {
-                                e.currentTarget.setPointerCapture(e.pointerId);
-                                setIsDraggingDial(true);
-                                updateDialFromClientPoint(e.clientX, e.clientY);
-                              }}
-                              onPointerMove={(e) => {
-                                if (isDraggingDial) {
-                                  updateDialFromClientPoint(e.clientX, e.clientY);
-                                }
-                              }}
-                              onPointerUp={() => setIsDraggingDial(false)}
-                              onPointerCancel={() => setIsDraggingDial(false)}
-                            >
-                              {/* Outer Watch Frame */}
-                              <circle
-                                cx={110}
-                                cy={110}
-                                r={104}
-                                className="fill-amber-950/90 dark:fill-[#140e09] stroke-amber-500/60"
-                                strokeWidth={3}
-                              />
-                              <circle
-                                cx={110}
-                                cy={110}
-                                r={94}
-                                className="fill-[#fdf6e7] dark:fill-[#241b13] stroke-amber-700/35"
-                                strokeWidth={1.5}
-                              />
-
-                              {/* Selected Duration Wedge & Progress Arc */}
-                              {(() => {
-                                const dialAngle = Math.min(360, Math.max(6, restDurationMinutes * 6));
-                                const handTip = dialPolarPoint(110, 110, 62, dialAngle);
-                                return (
-                                  <>
-                                    {dialAngle >= 360 ? (
-                                      <circle
-                                        cx={110}
-                                        cy={110}
-                                        r={80}
-                                        fill="rgba(16, 185, 129, 0.20)"
-                                        stroke="#10b981"
-                                        strokeWidth={6}
-                                      />
-                                    ) : (
-                                      <>
-                                        <path
-                                          d={describeDialWedge(110, 110, 80, dialAngle)}
-                                          fill="rgba(16, 185, 129, 0.22)"
-                                        />
-                                        <path
-                                          d={describeDialArc(110, 110, 80, dialAngle)}
-                                          fill="none"
-                                          stroke="#10b981"
-                                          strokeWidth={6}
-                                          strokeLinecap="round"
-                                        />
-                                      </>
-                                    )}
-
-                                    {/* 60 Tick Marks */}
-                                    {Array.from({ length: 60 }, (_, idx) => {
-                                      const deg = idx * 6;
-                                      const isMajor = idx % 5 === 0;
-                                      const p1 = dialPolarPoint(110, 110, isMajor ? 89 : 88, deg);
-                                      const p2 = dialPolarPoint(110, 110, isMajor ? 79 : 83, deg);
-                                      return (
-                                        <line
-                                          key={idx}
-                                          x1={p1.x}
-                                          y1={p1.y}
-                                          x2={p2.x}
-                                          y2={p2.y}
-                                          className={
-                                            isMajor
-                                              ? 'stroke-amber-900 dark:stroke-amber-200'
-                                              : 'stroke-amber-800/35 dark:stroke-amber-400/30'
-                                          }
-                                          strokeWidth={isMajor ? 2 : 1}
-                                          strokeLinecap="round"
-                                        />
-                                      );
-                                    })}
-
-                                    {/* Major Dial Numerals */}
-                                    {[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map((num) => {
-                                      const pos = dialPolarPoint(110, 110, 67, num * 6);
-                                      const active = restDurationMinutes === num;
-                                      return (
-                                        <text
-                                          key={num}
-                                          x={pos.x}
-                                          y={pos.y}
-                                          textAnchor="middle"
-                                          dominantBaseline="central"
-                                          className={`text-[10px] font-mono font-bold pointer-events-none ${
-                                            active
-                                              ? 'fill-emerald-700 dark:fill-emerald-300'
-                                              : 'fill-stone-600 dark:fill-amber-200/75'
-                                          }`}
-                                        >
-                                          {num}
-                                        </text>
-                                      );
-                                    })}
-
-                                    {/* Dial Hand */}
-                                    <line
-                                      x1={110}
-                                      y1={110}
-                                      x2={handTip.x}
-                                      y2={handTip.y}
-                                      stroke="#d97706"
-                                      strokeWidth={3.5}
-                                      strokeLinecap="round"
-                                    />
-                                    <circle
-                                      cx={handTip.x}
-                                      cy={handTip.y}
-                                      r={7}
-                                      className="fill-emerald-500 stroke-white dark:stroke-stone-900"
-                                      strokeWidth={2}
-                                    />
-                                    <circle
-                                      cx={110}
-                                      cy={110}
-                                      r={6}
-                                      className="fill-amber-600 stroke-amber-100"
-                                      strokeWidth={2}
-                                    />
-                                  </>
-                                );
-                              })()}
-                            </svg>
+                            <PocketWatchDialSvg
+                              dialRef={dialSvgRef}
+                              dialAngle={Math.min(360, Math.max(6, restDurationMinutes * 6))}
+                              activeMinuteMarker={restDurationMinutes}
+                              accent="emerald"
+                              interactive={true}
+                              isDragging={isDraggingDial}
+                              onDraggingChange={setIsDraggingDial}
+                              onUpdatePoint={updateDialFromClientPoint}
+                            />
                             <span className="text-[11px] text-stone-500 dark:text-amber-300/70">
                               拖动或点击表盘刻度可调节 1 ~ 60 分钟
                             </span>
@@ -4168,6 +4785,486 @@ export const KanbanView: React.FC = () => {
                           >
                             取消休息（不计入）
                           </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MODE 4.8: POMODORO TIMER WORKSPACE */}
+                  {dialogueMode === 'pomodoro' && (
+                    <div className="space-y-4">
+                      {/* Top Daily Harvest Stats + Phase Switcher Bar */}
+                      <div className="p-4 rounded-2xl guild-card border flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">🍅</span>
+                            <div>
+                              <div className="text-xs sm:text-sm font-extrabold text-stone-900 dark:text-amber-50">
+                                今日已收获 {pomodoroDailyStats.date === todayStr ? pomodoroDailyStats.count : 0} 颗番茄
+                                <span className="text-stone-500 dark:text-amber-200/75 font-semibold ml-1.5">
+                                  （累计 {pomodoroDailyStats.date === todayStr ? pomodoroDailyStats.minutes : 0} 分钟）
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-stone-600 dark:text-amber-200/75">
+                                <span>本轮长休周期：</span>
+                                {(() => {
+                                  const todayCnt =
+                                    pomodoroDailyStats.date === todayStr ? pomodoroDailyStats.count : 0;
+                                  const filled =
+                                    todayCnt > 0 && todayCnt % 4 === 0 ? 4 : todayCnt % 4;
+                                  return (
+                                    <span className="inline-flex items-center gap-1">
+                                      {[0, 1, 2, 3].map((pip) => (
+                                        <span
+                                          key={pip}
+                                          className={`inline-block w-2.5 h-2.5 rounded-full border ${
+                                            pip < filled
+                                              ? 'bg-rose-500 border-rose-600 dark:border-rose-400'
+                                              : 'bg-amber-900/10 dark:bg-white/10 border-amber-800/25 dark:border-white/20'
+                                          }`}
+                                          title={`第 ${pip + 1}/4 轮专注`}
+                                        />
+                                      ))}
+                                      <span className="font-mono font-bold ml-1 text-rose-700 dark:text-rose-300">
+                                        {filled}/4
+                                      </span>
+                                      {todayCnt > 0 && todayCnt % 4 === 0 && (
+                                        <span className="text-emerald-700 dark:text-emerald-300 font-bold ml-1">
+                                          · 建议长休整
+                                        </span>
+                                      )}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {(
+                            [
+                              {
+                                id: 'focus' as PomodoroPhase,
+                                label: `🍅 专注 (${pomodoroFocusMinutes}m)`,
+                                activeCls: 'bg-rose-600 text-white border-rose-500 shadow-sm',
+                              },
+                              {
+                                id: 'short_break' as PomodoroPhase,
+                                label: `☕ 短休 (${pomodoroShortBreakMinutes}m)`,
+                                activeCls: 'bg-emerald-600 text-white border-emerald-500 shadow-sm',
+                              },
+                              {
+                                id: 'long_break' as PomodoroPhase,
+                                label: `🏕️ 长休 (${pomodoroLongBreakMinutes}m)`,
+                                activeCls: 'bg-teal-600 text-white border-teal-500 shadow-sm',
+                              },
+                            ] as const
+                          ).map((tab) => {
+                            const isActive = pomodoroPhase === tab.id;
+                            return (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                disabled={pomodoroRunState === 'running' && !isActive}
+                                onClick={() => switchPomodoroPhaseTab(tab.id)}
+                                title={
+                                  pomodoroRunState === 'running' && !isActive
+                                    ? '计时进行中，请先暂停或重置后再切换阶段'
+                                    : undefined
+                                }
+                                className={`px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
+                                  isActive
+                                    ? tab.activeCls
+                                    : pomodoroRunState === 'running'
+                                      ? 'bg-amber-900/5 dark:bg-white/5 text-stone-400 dark:text-stone-500 border-amber-800/10 dark:border-white/10 cursor-not-allowed'
+                                      : 'bg-white/75 dark:bg-black/25 text-stone-700 dark:text-amber-100 border-amber-800/20 dark:border-white/15 hover:border-amber-500 cursor-pointer'
+                                }`}
+                              >
+                                {tab.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Last Completed Phase Banner */}
+                      {pomodoroLastSummary && (
+                        <div className="p-4 rounded-2xl bg-emerald-500/15 border-2 border-emerald-500/45 flex flex-wrap items-center justify-between gap-3">
+                          <div className="space-y-1 min-w-0">
+                            <div className="text-sm sm:text-base font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-2 flex-wrap">
+                              <span>
+                                {pomodoroLastSummary.phase === 'focus'
+                                  ? `🎉 专注冲刺完成（${pomodoroLastSummary.minutes} 分钟）`
+                                  : `☕ 休整恢复完成（${pomodoroLastSummary.minutes} 分钟）`}
+                              </span>
+                              <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/35">
+                                {pomodoroLastSummary.startTime} ~ {pomodoroLastSummary.endTime}
+                              </span>
+                            </div>
+                            <div className="text-xs sm:text-sm text-emerald-800/90 dark:text-emerald-200/85">
+                              {pomodoroLastSummary.taskTitle ? (
+                                pomodoroLastSummary.autoRecorded ? (
+                                  <span>
+                                    已自动记入《{pomodoroLastSummary.taskTitle}》的今日时间档案。
+                                  </span>
+                                ) : (
+                                  <span>关联委托：《{pomodoroLastSummary.taskTitle}》（仅计时，未写入打卡）。</span>
+                                )
+                              ) : (
+                                <span>本次为自由纯计时，未绑定具体委托。</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {pomodoroRunState === 'idle' && (
+                              <button
+                                type="button"
+                                onClick={() => startPomodoroPhase()}
+                                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer"
+                              >
+                                {pomodoroPhase === 'focus'
+                                  ? `🍅 开启下一轮 (${pomodoroFocusMinutes}m)`
+                                  : pomodoroPhase === 'long_break'
+                                    ? `🏕️ 开始长休整 (${pomodoroLongBreakMinutes}m)`
+                                    : `☕ 开始短休整 (${pomodoroShortBreakMinutes}m)`}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setPomodoroLastSummary(null)}
+                              className="p-1.5 rounded-lg text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/20 cursor-pointer"
+                              title="关闭提示"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Quest Binding & Optional Note Card */}
+                      <div className="p-4 rounded-2xl guild-card border space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label className="text-xs sm:text-sm font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-1.5">
+                            <span>📌 绑定攻略委托</span>
+                            {pomodoroBoundTask && (
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-400/35">
+                                {getQuestCategoryBadge(pomodoroBoundTask.tags).icon} {pomodoroBoundTask.title}
+                              </span>
+                            )}
+                          </label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setPomodoroShowAllTasks((prev) => !prev)}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-white/75 dark:bg-black/25 border border-amber-800/20 dark:border-white/15 text-stone-700 dark:text-amber-200 hover:border-amber-500 font-semibold cursor-pointer"
+                            >
+                              {pomodoroShowAllTasks
+                                ? `仅看攻略中 (${prioritizedInProgressTasks.length})`
+                                : `展开全部未完成 (${tasks.filter((t) => t.status !== 'done').length})`}
+                            </button>
+                            <label className="inline-flex items-center gap-1.5 text-xs font-bold text-stone-700 dark:text-amber-200 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={pomodoroAutoRecord}
+                                onChange={(e) => setPomodoroAutoRecord(e.target.checked)}
+                                className="rounded border-amber-600 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                              />
+                              <span>完成自动记入今日打卡</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                          <select
+                            value={pomodoroTaskId ?? ''}
+                            onChange={(e) => {
+                              const nextId = e.target.value || null;
+                              setPomodoroTaskId(nextId);
+                              if (nextId) setSelectedTaskId(nextId);
+                            }}
+                            className="w-full px-3 py-2 text-xs sm:text-sm bg-white dark:bg-[#1a140f] border border-amber-800/25 dark:border-amber-600/40 rounded-xl text-stone-900 dark:text-amber-50 focus:outline-none focus:border-rose-500"
+                          >
+                            <option value="">不绑定特定委托（纯番茄计时）</option>
+                            {pomodoroSelectableTasks.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {getQuestCategoryBadge(t.tags).icon} {t.title}（{RPG_STATUS_META[t.status].rpgLabel}）
+                              </option>
+                            ))}
+                          </select>
+
+                          <input
+                            type="text"
+                            value={pomodoroNote}
+                            onChange={(e) => setPomodoroNote(e.target.value)}
+                            placeholder="本次专注目标 / 备注（可选，专注结束时写入记录）"
+                            className="w-full px-3 py-2 text-xs sm:text-sm bg-white dark:bg-[#1a140f] border border-amber-800/25 dark:border-amber-600/40 rounded-xl text-stone-900 dark:text-amber-50 placeholder-stone-400 focus:outline-none focus:border-rose-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Main Interactive Pocket-Watch Dial & Controls */}
+                      <div className="p-5 rounded-2xl guild-card border">
+                        <div className="flex flex-col lg:flex-row items-center gap-6 justify-center">
+                          {/* Left: Interactive / Live SVG Pocket-Watch Dial */}
+                          <div className="flex flex-col items-center gap-2 shrink-0">
+                            <PocketWatchDialSvg
+                              dialRef={pomodoroDialSvgRef}
+                              dialAngle={
+                                pomodoroRunState === 'idle'
+                                  ? Math.min(360, Math.max(6, activePomodoroTotalMinutes * 6))
+                                  : Math.min(
+                                      360,
+                                      Math.max(
+                                        0.5,
+                                        (pomodoroRemainingSeconds /
+                                          Math.max(1, activePomodoroTotalMinutes * 60)) *
+                                          360
+                                      )
+                                    )
+                              }
+                              activeMinuteMarker={
+                                pomodoroRunState === 'idle' ? activePomodoroTotalMinutes : null
+                              }
+                              accent={pomodoroPhase === 'focus' ? 'rose' : 'emerald'}
+                              interactive={pomodoroRunState === 'idle'}
+                              isDragging={isDraggingPomodoroDial}
+                              onDraggingChange={setIsDraggingPomodoroDial}
+                              onUpdatePoint={updatePomodoroDialFromClientPoint}
+                            />
+                            <span className="text-[11px] text-stone-500 dark:text-amber-300/70">
+                              {pomodoroRunState === 'idle'
+                                ? '拖动或点击表盘刻度可快速调节 1 ~ 60 分钟'
+                                : pomodoroRunState === 'running'
+                                  ? '怀表运转中 · 扇区随剩余时间实时收拢'
+                                  : '已暂停 · 点击继续或提前完成入账'}
+                            </span>
+                          </div>
+
+                          {/* Right: Countdown Readout, Presets & Action Controls */}
+                          <div className="flex-1 w-full max-w-md space-y-4">
+                            <div className="p-4 rounded-2xl guild-subpanel border text-center space-y-2">
+                              <div className="flex items-center justify-center gap-2">
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${
+                                    pomodoroPhase === 'focus'
+                                      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/35'
+                                      : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/35'
+                                  }`}
+                                >
+                                  {pomodoroRunState === 'running'
+                                    ? pomodoroPhase === 'focus'
+                                      ? '🔥 专注冲刺中'
+                                      : pomodoroPhase === 'long_break'
+                                        ? '🏕️ 长休整恢复中'
+                                        : '☕ 短休整恢复中'
+                                    : pomodoroRunState === 'paused'
+                                      ? '⏸ 计时已暂停'
+                                      : pomodoroPhase === 'focus'
+                                        ? '🍅 专注准备就绪'
+                                        : pomodoroPhase === 'long_break'
+                                          ? '🏕️ 长休整准备就绪'
+                                          : '☕ 短休整准备就绪'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-center gap-3">
+                                {pomodoroRunState === 'idle' && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setActivePhaseMinutes(activePomodoroTotalMinutes - 1)
+                                    }
+                                    className="w-9 h-9 rounded-xl bg-amber-900/10 dark:bg-white/10 hover:bg-amber-900/20 text-lg font-extrabold cursor-pointer"
+                                    title="减少 1 分钟"
+                                  >
+                                    -
+                                  </button>
+                                )}
+                                <div
+                                  className={`text-4xl sm:text-5xl font-mono font-extrabold tabular-nums tracking-tight min-w-[140px] ${
+                                    pomodoroPhase === 'focus'
+                                      ? 'text-rose-700 dark:text-rose-300'
+                                      : 'text-emerald-700 dark:text-emerald-300'
+                                  }`}
+                                >
+                                  {formatCountdownMMSS(pomodoroRemainingSeconds)}
+                                </div>
+                                {pomodoroRunState === 'idle' && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setActivePhaseMinutes(activePomodoroTotalMinutes + 1)
+                                    }
+                                    className="w-9 h-9 rounded-xl bg-amber-900/10 dark:bg-white/10 hover:bg-amber-900/20 text-lg font-extrabold cursor-pointer"
+                                    title="增加 1 分钟"
+                                  >
+                                    +
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="text-xs font-mono text-stone-600 dark:text-stone-300">
+                                {pomodoroRunState === 'idle' ? (
+                                  (() => {
+                                    const nowStr = formatTimeHHMM(new Date());
+                                    const endStr = addMinutesToTimeHHMM(
+                                      nowStr,
+                                      activePomodoroTotalMinutes
+                                    );
+                                    return `预计时段：${nowStr} ~ ${endStr}（${activePomodoroTotalMinutes} 分钟）`;
+                                  })()
+                                ) : pomodoroRunState === 'running' && pomodoroTargetEndMs ? (
+                                  <span>
+                                    开始于 {pomodoroStartedAtStr || '--:--'} · 预计{' '}
+                                    {formatTimeHHMM(new Date(pomodoroTargetEndMs))} 完成
+                                  </span>
+                                ) : (
+                                  <span>开始于 {pomodoroStartedAtStr || '--:--'} · 已暂停等待恢复</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {pomodoroRunState === 'idle' && (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-xs font-bold text-stone-600 dark:text-amber-200/80">
+                                  <span>快捷时长预设：</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setActivePhaseMinutes(activePomodoroTotalMinutes - 5)
+                                      }
+                                      className="px-2 py-0.5 rounded-md bg-amber-900/10 dark:bg-white/10 hover:bg-amber-900/20 font-mono cursor-pointer"
+                                    >
+                                      -5m
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setActivePhaseMinutes(activePomodoroTotalMinutes + 5)
+                                      }
+                                      className="px-2 py-0.5 rounded-md bg-amber-900/10 dark:bg-white/10 hover:bg-amber-900/20 font-mono cursor-pointer"
+                                    >
+                                      +5m
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {(pomodoroPhase === 'focus'
+                                    ? [15, 25, 35, 45, 60]
+                                    : pomodoroPhase === 'short_break'
+                                      ? [3, 5, 10, 15]
+                                      : [10, 15, 20, 30]
+                                  ).map((preset) => (
+                                    <button
+                                      key={preset}
+                                      type="button"
+                                      onClick={() => setActivePhaseMinutes(preset)}
+                                      className={`flex-1 min-w-[54px] py-2 px-2 rounded-xl border text-xs sm:text-sm font-mono font-bold transition-all cursor-pointer ${
+                                        activePomodoroTotalMinutes === preset
+                                          ? pomodoroPhase === 'focus'
+                                            ? 'bg-rose-600 text-white border-rose-500 shadow-sm'
+                                            : 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                                          : 'bg-white/75 dark:bg-black/25 text-stone-700 dark:text-amber-100 border-amber-800/20 dark:border-white/15 hover:border-amber-500'
+                                      }`}
+                                    >
+                                      {preset}m
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Action Controls */}
+                            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                              {pomodoroRunState === 'idle' ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => startPomodoroPhase()}
+                                    className={`flex-1 min-w-[180px] px-5 py-3 rounded-xl text-white text-sm sm:text-base font-extrabold shadow-md flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                                      pomodoroPhase === 'focus'
+                                        ? 'bg-rose-600 hover:bg-rose-700'
+                                        : 'bg-emerald-600 hover:bg-emerald-700'
+                                    }`}
+                                  >
+                                    <Play className="w-4 h-4" />
+                                    <span>
+                                      {pomodoroPhase === 'focus'
+                                        ? `🍅 开始专注计时 (${activePomodoroTotalMinutes}m)`
+                                        : pomodoroPhase === 'long_break'
+                                          ? `🏕️ 开始长休整 (${activePomodoroTotalMinutes}m)`
+                                          : `☕ 开始短休整 (${activePomodoroTotalMinutes}m)`}
+                                    </span>
+                                  </button>
+                                  {pomodoroPhase !== 'focus' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => switchPomodoroPhaseTab('focus')}
+                                      className="px-4 py-3 rounded-xl guild-card border text-xs sm:text-sm font-bold text-stone-700 dark:text-amber-100 hover:border-amber-500 flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      <SkipForward className="w-4 h-4" />
+                                      <span>跳过休整</span>
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {pomodoroRunState === 'running' ? (
+                                    <button
+                                      type="button"
+                                      onClick={pausePomodoro}
+                                      className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-extrabold shadow-sm flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Pause className="w-4 h-4" />
+                                      <span>暂停</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={resumePomodoro}
+                                      className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-extrabold shadow-sm flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Play className="w-4 h-4" />
+                                      <span>继续</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => completePomodoroPhase(true)}
+                                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-extrabold shadow-sm flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>
+                                      {pomodoroPhase === 'focus'
+                                        ? '提前完成并入账'
+                                        : '结束休整并入账'}
+                                    </span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => extendPomodoro(5)}
+                                    className="px-3.5 py-2.5 rounded-xl guild-card border text-xs sm:text-sm font-bold text-amber-800 dark:text-amber-200 hover:border-amber-500 flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <Timer className="w-4 h-4" />
+                                    <span>+5 分钟</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={resetPomodoro}
+                                    className="px-3.5 py-2.5 rounded-xl bg-rose-100/80 dark:bg-rose-950/60 hover:bg-rose-200 text-rose-800 dark:text-rose-200 border border-rose-300/70 dark:border-rose-700/50 text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                    <span>重置</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>

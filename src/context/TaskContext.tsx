@@ -60,6 +60,8 @@ interface TaskContextType {
     markTaskAsCompleted?: boolean;
     mode?: 'append' | 'replace';
     restMinutes?: number;
+    sessionStartTime?: string;
+    sessionEndTime?: string;
   }) => DailyLog;
   addRestSession: (
     taskId: string,
@@ -924,14 +926,18 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     hoursVal: number | undefined,
     noteVal: string | undefined,
     progressType: ProgressType,
-    restMinutesVal: number | undefined
+    restMinutesVal: number | undefined,
+    sessionStartTime?: string,
+    sessionEndTime?: string
   ): WorkSession => {
     const now = new Date();
     const safeHours =
       typeof hoursVal === 'number' && !isNaN(hoursVal) && hoursVal >= 0
-        ? Math.round(hoursVal * 10) / 10
+        ? Math.round(hoursVal * 100) / 100
         : 0;
     const calc = computeWorkSessionFromNow(safeHours > 0 ? safeHours : 0.1, now);
+    const resolvedStartTime = sessionStartTime || (safeHours > 0 ? calc.startTime : calc.endTime);
+    const resolvedEndTime = sessionEndTime || calc.endTime;
     const wsId = 'ws-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
 
     const parsedRest =
@@ -944,8 +950,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             {
               id: 'rest-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
               sessionId: wsId,
-              startTime: calc.endTime,
-              endTime: addMinutesToTimeHHMM(calc.endTime, parsedRest),
+              startTime: resolvedEndTime,
+              endTime: addMinutesToTimeHHMM(resolvedEndTime, parsedRest),
               durationMinutes: parsedRest,
               recordedAt: now.toISOString(),
             },
@@ -954,8 +960,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     return {
       id: wsId,
-      startTime: safeHours > 0 ? calc.startTime : calc.endTime,
-      endTime: calc.endTime,
+      startTime: resolvedStartTime,
+      endTime: resolvedEndTime,
       hours: safeHours,
       note: noteVal?.trim() || undefined,
       progressType,
@@ -974,6 +980,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     markTaskAsCompleted,
     mode = 'replace',
     restMinutes,
+    sessionStartTime,
+    sessionEndTime,
   }: {
     taskId: string;
     date: string;
@@ -983,6 +991,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     markTaskAsCompleted?: boolean;
     mode?: 'append' | 'replace';
     restMinutes?: number;
+    sessionStartTime?: string;
+    sessionEndTime?: string;
   }): DailyLog => {
     const currentTasks = latestStateRef.current.tasks;
     const currentLogs = latestStateRef.current.logs;
@@ -998,7 +1008,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const parsedHours =
       typeof hours === 'number' && !isNaN(hours) && hours >= 0
-        ? Math.round(hours * 10) / 10
+        ? Math.round(hours * 100) / 100
         : undefined;
     const parsedRestMinutes =
       typeof restMinutes === 'number' && !isNaN(restMinutes) && restMinutes > 0
@@ -1016,7 +1026,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           parsedHours,
           note,
           progressType,
-          parsedRestMinutes
+          parsedRestMinutes,
+          sessionStartTime,
+          sessionEndTime
         );
         savedLog = aggregateLogFromSessions(
           {
@@ -1035,7 +1047,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             parsedHours,
             note,
             progressType,
-            parsedRestMinutes
+            parsedRestMinutes,
+            sessionStartTime,
+            sessionEndTime
           );
           const keptRests = prevSingle?.restSessions || [];
           const mergedRests = [
@@ -1093,7 +1107,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         parsedHours,
         note,
         progressType,
-        parsedRestMinutes
+        parsedRestMinutes,
+        sessionStartTime,
+        sessionEndTime
       );
       savedLog = aggregateLogFromSessions(
         {
