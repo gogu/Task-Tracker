@@ -76,6 +76,7 @@ import {
   isNpcImageReady,
   resolveCachedNpcImageUrl,
   preloadNpcConfigAssets,
+  refreshNpcConfigImageCache,
   loadAffectionPoints,
   saveAffectionPoints,
   calculateGuildRank,
@@ -979,6 +980,7 @@ export const KanbanView: React.FC = () => {
   const bgRawSrc = npcConfig.customBgUrl || './npc/bg-guild-hall.jpg';
 
   useEffect(() => {
+    setLoadedRawSrcs({});
     setFailedRawSrcs({});
     setLastReadyRawSrc('');
   }, [npcConfig]);
@@ -2108,14 +2110,26 @@ export const KanbanView: React.FC = () => {
   };
 
   const handleSaveNpcConfig = (next: NpcConfig) => {
+    setLoadedRawSrcs({});
+    setFailedRawSrcs({});
+    setLastReadyRawSrc('');
     setNpcConfig(next);
     saveNpcConfig(next);
+    refreshNpcConfigImageCache(next, expression, () => {
+      setCacheVersion((v) => v + 1);
+    });
     showToast(`已更新看板娘「${next.name}」的设定`, 'success');
   };
 
   const handleResetNpcConfig = () => {
     const def = resetNpcConfig();
+    setLoadedRawSrcs({});
+    setFailedRawSrcs({});
+    setLastReadyRawSrc('');
     setNpcConfig(def);
+    refreshNpcConfigImageCache(def, expression, () => {
+      setCacheVersion((v) => v + 1);
+    });
     showToast('已恢复默认公会看板娘立绘与设定', 'info');
   };
 

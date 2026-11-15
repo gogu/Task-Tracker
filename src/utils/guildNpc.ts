@@ -723,7 +723,23 @@ export function isNpcImageReady(src: string): boolean {
   return decodedImagePool.has(src);
 }
 
-export function preloadAndCacheNpcImage(src: string): Promise<string> {
+function evictCachedNpcImage(src: string): void {
+  const oldBlobUrl = blobUrlCache.get(src);
+  if (oldBlobUrl) {
+    blobUrlCache.delete(src);
+    decodedImagePool.delete(oldBlobUrl);
+    if (typeof window !== 'undefined') {
+      // Delay revocation slightly so mounted <img> nodes swap cleanly without flicker
+      globalThis.setTimeout(() => {
+        URL.revokeObjectURL(oldBlobUrl);
+      }, 5000);
+    }
+  }
+  decodedImagePool.delete(src);
+  inflightImagePromises.delete(src);
+}
+
+export function preloadAndCacheNpcImage(src: string, forceRefresh = false): Promise<string> {
   if (!src || typeof window === 'undefined') {
     return Promise.resolve(src);
   }
@@ -732,14 +748,18 @@ export function preloadAndCacheNpcImage(src: string): Promise<string> {
     return pinAndDecodeImage(src).then(() => src);
   }
 
-  const cachedBlob = blobUrlCache.get(src);
-  if (cachedBlob) {
-    return pinAndDecodeImage(cachedBlob).then(() => cachedBlob);
-  }
+  if (forceRefresh) {
+    evictCachedNpcImage(src);
+  } else {
+    const cachedBlob = blobUrlCache.get(src);
+    if (cachedBlob) {
+      return pinAndDecodeImage(cachedBlob).then(() => cachedBlob);
+    }
 
-  const inflight = inflightImagePromises.get(src);
-  if (inflight) {
-    return inflight;
+    const inflight = inflightImagePromises.get(src);
+    if (inflight) {
+      return inflight;
+    }
   }
 
   const promise = (async () => {
@@ -750,9 +770,13 @@ export function preloadAndCacheNpcImage(src: string): Promise<string> {
       if ('caches' in window) {
         try {
           cache = await window.caches.open(NPC_IMAGE_CACHE_NAME);
-          const matched = await cache.match(src);
-          if (matched && matched.ok) {
-            response = matched;
+          if (forceRefresh) {
+            await cache.delete(src);
+          } else {
+            const matched = await cache.match(src);
+            if (matched && matched.ok) {
+              response = matched;
+            }
           }
         } catch {
           // Cache Storage may be disabled in private browsing contexts
@@ -760,7 +784,7 @@ export function preloadAndCacheNpcImage(src: string): Promise<string> {
       }
 
       if (!response) {
-        const fetched = await fetch(src, { cache: 'default' });
+        const fetched = await fetch(src, { cache: forceRefresh ? 'reload' : 'default' });
         if (!fetched.ok) {
           throw new Error(`HTTP ${fetched.status}`);
         }
@@ -788,7 +812,9 @@ export function preloadAndCacheNpcImage(src: string): Promise<string> {
     await pinAndDecodeImage(src);
     return src;
   })().finally(() => {
-    inflightImagePromises.delete(src);
+    if (inflightImagePromises.get(src) === promise) {
+      inflightImagePromises.delete(src);
+    }
   });
 
   inflightImagePromises.set(src, promise);
@@ -836,7 +862,8 @@ function scheduleIdlePresetWarmup(): void {
 export function preloadNpcConfigAssets(
   config: NpcConfig,
   priorityExpression: NpcExpression = 'normal',
-  onUpdate?: () => void
+  onUpdate?: () => void,
+  forceRefresh = false
 ): void {
   if (typeof window === 'undefined') return;
 
@@ -852,9 +879,9 @@ export function preloadNpcConfigAssets(
   );
 
   const loadOne = (url: string) => {
-    const alreadyHadBlob = blobUrlCache.has(url);
-    void preloadAndCacheNpcImage(url).then(() => {
-      if (!alreadyHadBlob || blobUrlCache.has(url)) {
+    const alreadyHadBlob = !forceRefresh && blobUrlCache.has(url);
+    void preloadAndCacheNpcImage(url, forceRefresh).then(() => {
+      if (forceRefresh || !alreadyHadBlob || blobUrlCache.has(url)) {
         onUpdate?.();
       }
     });
@@ -863,4 +890,12 @@ export function preloadNpcConfigAssets(
   Array.from(new Set(priorityUrls)).forEach(loadOne);
   secondaryUrls.forEach(loadOne);
   scheduleIdlePresetWarmup();
+}
+
+export function refreshNpcConfigImageCache(
+  config: NpcConfig,
+  priorityExpression: NpcExpression = 'normal',
+  onUpdate?: () => void
+): void {
+  preloadNpcConfigAssets(config, priorityExpression, onUpdate, true);
 }

@@ -19,6 +19,8 @@ import {
   EXPRESSION_META,
   DEFAULT_NPC_CONFIG,
   NPC_PRESETS,
+  refreshNpcConfigImageCache,
+  resolveCachedNpcImageUrl,
 } from '../utils/guildNpc';
 
 interface NpcConfigModalProps {
@@ -389,6 +391,7 @@ export const NpcConfigModal: React.FC<NpcConfigModalProps> = ({
   const [showPromptGuide, setShowPromptGuide] = useState(false);
   const [activeGuideTab, setActiveGuideTab] = useState<'spec' | 'templates' | 'presets'>('spec');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [modalCacheVersion, setModalCacheVersion] = useState(0);
   const copyTimerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeTargetRef = useRef<NpcExpression | 'bg' | null>(null);
@@ -453,6 +456,8 @@ export const NpcConfigModal: React.FC<NpcConfigModalProps> = ({
       setBgProcessNotice(null);
     }
   }, [isOpen, config]);
+
+  void modalCacheVersion;
 
   if (!isOpen) return null;
 
@@ -525,7 +530,11 @@ export const NpcConfigModal: React.FC<NpcConfigModalProps> = ({
     if (saveImmediately) {
       onSave(nextConfig);
       onClose();
+      return;
     }
+    refreshNpcConfigImageCache(nextConfig, 'normal', () =>
+      setModalCacheVersion((v) => v + 1)
+    );
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -612,13 +621,13 @@ export const NpcConfigModal: React.FC<NpcConfigModalProps> = ({
                         {preset.config.displayMode === 'sprite' && preset.config.customBgUrl ? (
                           <>
                             <img
-                              src={preset.config.customBgUrl}
+                              src={resolveCachedNpcImageUrl(preset.config.customBgUrl)}
                               alt={preset.themeName}
                               className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent" />
                             <img
-                              src={preset.config.expressions.normal}
+                              src={resolveCachedNpcImageUrl(preset.config.expressions.normal)}
                               alt={preset.config.name}
                               className="absolute bottom-0 right-2 h-[96%] w-auto object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]"
                             />
@@ -626,7 +635,7 @@ export const NpcConfigModal: React.FC<NpcConfigModalProps> = ({
                         ) : (
                           <>
                             <img
-                              src={preset.config.expressions.normal}
+                              src={resolveCachedNpcImageUrl(preset.config.expressions.normal)}
                               alt={preset.config.name}
                               className="absolute inset-0 w-full h-full object-cover object-top"
                             />
@@ -997,7 +1006,7 @@ export const NpcConfigModal: React.FC<NpcConfigModalProps> = ({
                       >
                         {val ? (
                           <img
-                            src={val}
+                            src={resolveCachedNpcImageUrl(val)}
                             alt={meta.label}
                             className={`w-full h-full ${
                               draft.displayMode === 'sprite'
