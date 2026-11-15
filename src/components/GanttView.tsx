@@ -1,12 +1,19 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ChevronLeft,
   ChevronRight,
   ScrollText,
-  CheckCircle2,
   GripVertical,
 } from 'lucide-react';
-import { TaskItem, DailyLog, GanttTimeRange, PROGRESS_TYPE_CONFIG, TaskStatus } from '../types';
+import {
+  TaskItem,
+  DailyLog,
+  GanttTimeRange,
+  PROGRESS_TYPE_CONFIG,
+  ProgressType,
+  TaskStatus,
+} from '../types';
 import { useTaskContext } from '../context/TaskContext';
 import {
   getTodayString,
@@ -17,6 +24,126 @@ import {
   formatHours,
 } from '../utils/date';
 import { getQuestCategoryBadge } from '../utils/guildNpc';
+import { formatRestDuration } from '../utils/timeDistribution';
+
+interface DateColMeta {
+  dateStr: string;
+  dayNum: number;
+  monthLabel: string;
+  weekdayShort: string;
+  weekdayFull: string;
+  isToday: boolean;
+  isWeekend: boolean;
+}
+
+interface TimelineSegment {
+  key: string;
+  startIdx: number;
+  endIdx: number;
+  leftPct: number;
+  widthPct: number;
+  gradient: string;
+  tipType: ProgressType;
+  showTipBall: boolean;
+}
+
+interface HoveredLogInfo {
+  x: number;
+  y: number;
+  placeBelow: boolean;
+  task: TaskItem;
+  colMeta: DateColMeta;
+  log: DailyLog;
+  cumulativeHours: number;
+}
+
+const EMPTY_SEGMENTS: TimelineSegment[] = [];
+
+const TIMELINE_TYPE_STYLE: Record<
+  ProgressType,
+  {
+    tail: string;
+    mid: string;
+    head: string;
+    ballColor: string;
+    legendGradient: string;
+    dotClass: string;
+    hoverDotClass: string;
+  }
+> = {
+  progress: {
+    tail: 'rgba(59, 130, 246, 0.25)',
+    mid: '#3b82f6',
+    head: '#3b82f6',
+    ballColor: '#3b82f6',
+    legendGradient: 'linear-gradient(90deg, rgba(59, 130, 246, 0.25) 0%, #3b82f6 100%)',
+    dotClass: 'bg-blue-400',
+    hoverDotClass: 'border-white/95 bg-blue-500',
+  },
+  rest: {
+    tail: 'rgba(245, 158, 11, 0.25)',
+    mid: '#f59e0b',
+    head: '#f59e0b',
+    ballColor: '#f59e0b',
+    legendGradient: 'linear-gradient(90deg, rgba(245, 158, 11, 0.25) 0%, #f59e0b 100%)',
+    dotClass: 'bg-amber-400',
+    hoverDotClass: 'border-white/95 bg-amber-500',
+  },
+  completed: {
+    tail: 'rgba(16, 185, 129, 0.28)',
+    mid: '#10b981',
+    head: '#10b981',
+    ballColor: '#10b981',
+    legendGradient: 'linear-gradient(90deg, rgba(16, 185, 129, 0.28) 0%, #10b981 100%)',
+    dotClass: 'bg-emerald-400',
+    hoverDotClass: 'border-white/95 bg-emerald-500',
+  },
+};
+
+function buildSegmentGradient(
+  segLogs: DailyLog[],
+  startIdx: number,
+  endIdx: number,
+  extendsLeft: boolean,
+  extendsRight: boolean,
+  totalCols: number
+): string {
+  const firstType = segLogs[0].progressType;
+  const lastType = segLogs[segLogs.length - 1].progressType;
+  const allSameType = segLogs.every((l) => l.progressType === firstType);
+
+  if (allSameType) {
+    const style = TIMELINE_TYPE_STYLE[lastType];
+    if (extendsLeft && extendsRight) {
+      return `linear-gradient(90deg, ${style.mid} 0%, ${style.mid} 100%)`;
+    }
+    if (extendsLeft) {
+      return `linear-gradient(90deg, ${style.mid} 0%, ${style.head} 100%)`;
+    }
+    if (extendsRight) {
+      return `linear-gradient(90deg, ${style.tail} 0%, ${style.mid} 55%, ${style.mid} 100%)`;
+    }
+    return `linear-gradient(90deg, ${style.tail} 0%, ${style.mid} 45%, ${style.head} 100%)`;
+  }
+
+  const segStartCol = extendsLeft ? 0 : startIdx + 0.1;
+  const segEndCol = extendsRight ? totalCols : endIdx + 0.5;
+  const span = Math.max(0.01, segEndCol - segStartCol);
+
+  const firstStyle = TIMELINE_TYPE_STYLE[firstType];
+  const lastStyle = TIMELINE_TYPE_STYLE[lastType];
+  const stops: string[] = [`${extendsLeft ? firstStyle.mid : firstStyle.tail} 0%`];
+
+  for (let i = 0; i < segLogs.length; i++) {
+    const colCenter = startIdx + i + 0.5;
+    const rawPct = ((colCenter - segStartCol) / span) * 100;
+    const pct = Math.max(1, Math.min(99, Math.round(rawPct * 10) / 10));
+    stops.push(`${TIMELINE_TYPE_STYLE[segLogs[i].progressType].mid} ${pct}%`);
+  }
+
+  stops.push(`${extendsRight ? lastStyle.mid : lastStyle.head} 100%`);
+  return `linear-gradient(90deg, ${stops.join(', ')})`;
+}
 
 // Visual configuration for row background by task status (RPG Parchment palette)
 const getRowStatusClasses = (status: TaskStatus) => {
@@ -60,6 +187,181 @@ const getRowStatusClasses = (status: TaskStatus) => {
   }
 };
 
+interface GanttTaskRowProps {
+  task: TaskItem;
+  dateColumns: DateColMeta[];
+  nextWindowDate: string | null;
+  taskLogsByDate: Map<string, DailyLog> | undefined;
+  segments: TimelineSegment[];
+  isDragging: boolean;
+  dragOverPos: 'before' | 'after' | null;
+  onOpenDetail: (taskId: string) => void;
+  onClickCell: (task: TaskItem, dateStr: string) => void;
+  onHoverLog: (
+    targetEl: HTMLElement,
+    task: TaskItem,
+    colMeta: DateColMeta,
+    log: DailyLog
+  ) => void;
+  onLeaveLog: () => void;
+  onDragStart: (e: React.DragEvent, taskId: string) => void;
+  onDragOver: (e: React.DragEvent, taskId: string) => void;
+  onDragLeave: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, taskId: string) => void;
+  onDragEnd: () => void;
+}
+
+const GanttTaskRow = React.memo<GanttTaskRowProps>(
+  ({
+    task,
+    dateColumns,
+    nextWindowDate,
+    taskLogsByDate,
+    segments,
+    isDragging,
+    dragOverPos,
+    onOpenDetail,
+    onClickCell,
+    onHoverLog,
+    onLeaveLog,
+    onDragStart,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    onDragEnd,
+  }) => {
+    const statusStyle = getRowStatusClasses(task.status);
+    const totalCols = dateColumns.length;
+
+    return (
+      <div
+        draggable
+        onDragStart={(e) => onDragStart(e, task.id)}
+        onDragOver={(e) => onDragOver(e, task.id)}
+        onDragLeave={onDragLeave}
+        onDrop={(e) => onDrop(e, task.id)}
+        onDragEnd={onDragEnd}
+        className={`flex w-full min-w-0 border-b ${statusStyle.border} ${statusStyle.rowBg} transition-colors group relative ${
+          isDragging ? 'opacity-40' : ''
+        }`}
+      >
+        {dragOverPos === 'before' && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-500 z-30 pointer-events-none" />
+        )}
+        {dragOverPos === 'after' && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500 z-30 pointer-events-none" />
+        )}
+
+        {/* Task Label Card */}
+        <div className="w-40 sm:w-52 md:w-60 shrink-0 px-2 py-2 border-r border-amber-800/20 dark:border-amber-700/35 flex items-center gap-1.5 min-w-0">
+          <GripVertical className="w-3.5 h-3.5 text-amber-800/25 dark:text-amber-300/25 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing hidden sm:block" />
+          <div
+            onClick={() => onOpenDetail(task.id)}
+            className="flex items-center gap-1.5 min-w-0 flex-1 cursor-pointer hover:opacity-85 transition-opacity"
+          >
+            <span
+              className={`shrink-0 text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded font-bold ${statusStyle.badge}`}
+            >
+              {statusStyle.statusLabel}
+            </span>
+            <span
+              className="text-xs font-bold text-stone-900 dark:text-amber-50 truncate group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors"
+              title={task.title}
+            >
+              {task.title}
+            </span>
+          </div>
+        </div>
+
+        {/* Dual-Layer Timeline Container: Bottom = Grid Cells, Top = Continuous Gradient Thin Lines */}
+        <div className="flex-1 min-w-0 relative isolate flex">
+          {/* Bottom Layer: Grid Cells & Vertical Axes */}
+          <div
+            className="flex-1 min-w-0 grid items-stretch"
+            style={{ gridTemplateColumns: `repeat(${totalCols}, minmax(0, 1fr))` }}
+          >
+            {dateColumns.map((col, dateIdx) => {
+              const log = taskLogsByDate?.get(col.dateStr);
+              const nextDateStr =
+                dateIdx < totalCols - 1 ? dateColumns[dateIdx + 1].dateStr : nextWindowDate;
+              const hasNextLog = !!(log && nextDateStr && taskLogsByDate?.has(nextDateStr));
+              const isTipCell = !!(log && !hasNextLog);
+              const typeStyle = log ? TIMELINE_TYPE_STYLE[log.progressType] : null;
+
+              return (
+                <div
+                  key={col.dateStr}
+                  onClick={() => onClickCell(task, col.dateStr)}
+                  onMouseEnter={
+                    log ? (e) => onHoverLog(e.currentTarget, task, col, log) : undefined
+                  }
+                  onMouseLeave={log ? onLeaveLog : undefined}
+                  className={`min-w-0 h-full flex items-center justify-center border-r border-amber-800/10 dark:border-amber-700/15 relative cursor-pointer group/cell ${
+                    col.isToday
+                      ? 'bg-amber-500/15 dark:bg-amber-500/20'
+                      : col.isWeekend
+                      ? 'bg-black/[0.025] dark:bg-white/[0.02]'
+                      : ''
+                  } ${
+                    log
+                      ? 'hover:bg-amber-500/15 dark:hover:bg-amber-500/25'
+                      : 'hover:bg-amber-500/10 dark:hover:bg-amber-500/15'
+                  } transition-colors`}
+                >
+                  {col.isToday && (
+                    <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-amber-600/45 pointer-events-none" />
+                  )}
+
+                  {log && typeStyle ? (
+                    <span
+                      className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20 rounded-full opacity-0 scale-75 group-hover/cell:opacity-100 group-hover/cell:scale-100 transition-all duration-150 ${
+                        isTipCell
+                          ? 'w-4 h-4 sm:w-[18px] sm:h-[18px] border-2 border-white/90 dark:border-amber-100/90'
+                          : `w-2.5 h-2.5 border-2 ${typeStyle.hoverDotClass}`
+                      }`}
+                    />
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-transparent group-hover/cell:bg-amber-500/55 transition-colors pointer-events-none" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Top Layer: Continuous Gradient Thin Lines & Tip Spheres (unbroken by vertical axes) */}
+          {segments.length > 0 && (
+            <div className="absolute inset-0 pointer-events-none z-10">
+              {segments.map((seg) => {
+                const tipStyle = TIMELINE_TYPE_STYLE[seg.tipType];
+                return (
+                  <div
+                    key={seg.key}
+                    style={{
+                      left: `${seg.leftPct}%`,
+                      width: `${seg.widthPct}%`,
+                      background: seg.gradient,
+                    }}
+                    className="absolute top-1/2 -translate-y-1/2 h-[5.25px] sm:h-[6px] rounded-full"
+                  >
+                    {seg.showTipBall && (
+                      <span
+                        style={{ backgroundColor: tipStyle.ballColor }}
+                        className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+);
+
+GanttTaskRow.displayName = 'GanttTaskRow';
+
 export const GanttView: React.FC = () => {
   const {
     filteredTasks,
@@ -69,7 +371,6 @@ export const GanttView: React.FC = () => {
     reorderTasksGlobal,
     ganttGroupOrder,
     setGanttGroupOrder,
-    getTaskTotalHours,
   } = useTaskContext();
 
   const [timeRange, setTimeRange] = useState<GanttTimeRange>('month');
@@ -78,6 +379,7 @@ export const GanttView: React.FC = () => {
   const todayStr = getTodayString();
 
   const toggleStatusFilter = (status: TaskStatus) => {
+    setHoveredCell(null);
     setStatusFilter((prev) => {
       const next = new Set(prev);
       if (next.has(status)) {
@@ -89,14 +391,8 @@ export const GanttView: React.FC = () => {
     });
   };
 
-  // Tooltip state
-  const [hoveredCell, setHoveredCell] = useState<{
-    x: number;
-    y: number;
-    task: TaskItem;
-    date: string;
-    log?: DailyLog;
-  } | null>(null);
+  // Tooltip state (only triggered when hovering recorded line/cells)
+  const [hoveredCell, setHoveredCell] = useState<HoveredLogInfo | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -108,6 +404,10 @@ export const GanttView: React.FC = () => {
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
   const [taskDropPos, setTaskDropPos] = useState<'before' | 'after'>('before');
+
+  const draggingTaskIdRef = useRef<string | null>(null);
+  const dragOverTaskIdRef = useRef<string | null>(null);
+  const taskDropPosRef = useRef<'before' | 'after'>('before');
 
   // Status counts for filter tabs
   const statusCounts = useMemo(() => {
@@ -158,19 +458,147 @@ export const GanttView: React.FC = () => {
     return getGanttDateWindow(timeRange, earliestDate, latestDate, pivotDate);
   }, [timeRange, earliestDate, latestDate, pivotDate]);
 
-  const logsLookup = useMemo(() => {
-    const map = new Map<string, DailyLog>();
-    logs.forEach((log) => {
-      map.set(`${log.taskId}_${log.date}`, log);
+  const isCompactCols = dates.length > 21;
+
+  // Precompute column metadata once per window change (avoids Date allocations inside row/cell loops)
+  const dateColumns = useMemo<DateColMeta[]>(() => {
+    return dates.map((dateStr, idx) => {
+      const [, month, day] = dateStr.split('-');
+      const dayNum = parseInt(day, 10);
+      const weekdayFull = getWeekdayChinese(dateStr);
+      return {
+        dateStr,
+        dayNum,
+        monthLabel: !isCompactCols || dayNum === 1 || idx === 0 ? `${parseInt(month, 10)}月` : '',
+        weekdayShort: weekdayFull.replace('周', ''),
+        weekdayFull,
+        isToday: dateStr === todayStr,
+        isWeekend: isWeekend(dateStr),
+      };
     });
-    return map;
+  }, [dates, todayStr, isCompactCols]);
+
+  const prevWindowDate = useMemo(
+    () => (dates.length > 0 ? addDays(dates[0], -1) : null),
+    [dates]
+  );
+  const nextWindowDate = useMemo(
+    () => (dates.length > 0 ? addDays(dates[dates.length - 1], 1) : null),
+    [dates]
+  );
+
+  // Single-pass index of logs by taskId -> date -> DailyLog + prefix-sum cumulative hours
+  const { logsByTaskMap, cumulativeHoursByTaskId } = useMemo(() => {
+    const byTask = new Map<string, Map<string, DailyLog>>();
+
+    logs.forEach((log) => {
+      let dateMap = byTask.get(log.taskId);
+      if (!dateMap) {
+        dateMap = new Map<string, DailyLog>();
+        byTask.set(log.taskId, dateMap);
+      }
+      dateMap.set(log.date, log);
+    });
+
+    const cumHoursMap = new Map<string, Map<string, number>>();
+    byTask.forEach((dateMap, taskId) => {
+      const taskLogs = Array.from(dateMap.values());
+      if (taskLogs.length > 1) {
+        taskLogs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      }
+      const dateHours = new Map<string, number>();
+      let running = 0;
+      for (let i = 0; i < taskLogs.length; i++) {
+        const h = taskLogs[i].hours;
+        if (typeof h === 'number' && !isNaN(h)) {
+          running += h;
+        }
+        dateHours.set(taskLogs[i].date, Math.round(running * 10) / 10);
+      }
+      cumHoursMap.set(taskId, dateHours);
+    });
+
+    return { logsByTaskMap: byTask, cumulativeHoursByTaskId: cumHoursMap };
   }, [logs]);
 
+  // Precompute continuous gradient segments per task
+  const segmentsByTaskId = useMemo(() => {
+    const map = new Map<string, TimelineSegment[]>();
+    const totalCols = dates.length;
+    if (totalCols === 0) return map;
+
+    displayedTasks.forEach((task) => {
+      const taskDateMap = logsByTaskMap.get(task.id);
+      if (!taskDateMap || taskDateMap.size === 0) return;
+
+      const segments: TimelineSegment[] = [];
+      let segStart = -1;
+      let segLogs: DailyLog[] = [];
+
+      const flushSegment = (endIdx: number) => {
+        if (segStart < 0 || segLogs.length === 0) return;
+        const extendsLeft = segStart === 0 && !!(prevWindowDate && taskDateMap.has(prevWindowDate));
+        const extendsRight =
+          endIdx === totalCols - 1 && !!(nextWindowDate && taskDateMap.has(nextWindowDate));
+
+        const leftPct = extendsLeft ? 0 : ((segStart + 0.1) / totalCols) * 100;
+        const rightPct = extendsRight ? 100 : ((endIdx + 0.5) / totalCols) * 100;
+        const widthPct = Math.max(0.5, rightPct - leftPct);
+
+        const tipType = segLogs[segLogs.length - 1].progressType;
+
+        segments.push({
+          key: `${dates[segStart]}_${dates[endIdx]}`,
+          startIdx: segStart,
+          endIdx,
+          leftPct: Math.round(leftPct * 1000) / 1000,
+          widthPct: Math.round(widthPct * 1000) / 1000,
+          gradient: buildSegmentGradient(
+            segLogs,
+            segStart,
+            endIdx,
+            extendsLeft,
+            extendsRight,
+            totalCols
+          ),
+          tipType,
+          showTipBall: !extendsRight,
+        });
+
+        segStart = -1;
+        segLogs = [];
+      };
+
+      for (let i = 0; i < totalCols; i++) {
+        const log = taskDateMap.get(dates[i]);
+        if (log) {
+          if (segStart < 0) {
+            segStart = i;
+          }
+          segLogs.push(log);
+        } else if (segStart >= 0) {
+          flushSegment(i - 1);
+        }
+      }
+      if (segStart >= 0) {
+        flushSegment(totalCols - 1);
+      }
+
+      if (segments.length > 0) {
+        map.set(task.id, segments);
+      }
+    });
+
+    return map;
+  }, [displayedTasks, dates, logsByTaskMap, prevWindowDate, nextWindowDate]);
+
   const handleShiftDate = (days: number) => {
+    setHoveredCell(null);
     setPivotDate((prev) => addDays(prev, days));
   };
 
   const handleResetToday = () => {
+    setHoveredCell(null);
     setPivotDate(todayStr);
   };
 
@@ -181,8 +609,58 @@ export const GanttView: React.FC = () => {
     return [...ordered, ...newTags].map((tag) => [tag, groupedTasks[tag]] as [string, TaskItem[]]);
   }, [groupedTasks, ganttGroupOrder]);
 
+  // Keep refs for callbacks passed to React.memo(GanttTaskRow) so rows never re-render on hover/context updates
+  const openCheckInModalRef = useRef(openCheckInModal);
+  openCheckInModalRef.current = openCheckInModal;
+
+  const openTaskDetailRef = useRef(openTaskDetail);
+  openTaskDetailRef.current = openTaskDetail;
+
+  const reorderTasksGlobalRef = useRef(reorderTasksGlobal);
+  reorderTasksGlobalRef.current = reorderTasksGlobal;
+
+  const cumulativeHoursRef = useRef(cumulativeHoursByTaskId);
+  cumulativeHoursRef.current = cumulativeHoursByTaskId;
+
+  const handleOpenDetail = useCallback((taskId: string) => {
+    openTaskDetailRef.current(taskId);
+  }, []);
+
+  const handleClickCell = useCallback((task: TaskItem, dateStr: string) => {
+    setHoveredCell(null);
+    openCheckInModalRef.current(task, dateStr);
+  }, []);
+
+  const handleHoverLog = useCallback(
+    (targetEl: HTMLElement, task: TaskItem, colMeta: DateColMeta, log: DailyLog) => {
+      const rect = targetEl.getBoundingClientRect();
+      const clampedX = Math.max(
+        130,
+        Math.min(window.innerWidth - 130, rect.left + rect.width / 2)
+      );
+      const placeBelow = rect.top < 180;
+      const cumulativeHours = cumulativeHoursRef.current.get(task.id)?.get(colMeta.dateStr) ?? 0;
+
+      setHoveredCell({
+        x: clampedX,
+        y: placeBelow ? rect.bottom + 8 : rect.top - 10,
+        placeBelow,
+        task,
+        colMeta,
+        log,
+        cumulativeHours,
+      });
+    },
+    []
+  );
+
+  const handleLeaveLog = useCallback(() => {
+    setHoveredCell(null);
+  }, []);
+
   // ── Group drag handlers ───────────────────────────────────────────────────
   const handleGroupDragStart = (e: React.DragEvent, tag: string) => {
+    setHoveredCell(null);
     setDraggingGroupTag(tag);
     e.dataTransfer.setData('dragType', 'group');
     e.dataTransfer.effectAllowed = 'move';
@@ -221,43 +699,56 @@ export const GanttView: React.FC = () => {
     setDragOverGroupTag(null);
   };
 
-  // ── Task row drag handlers ────────────────────────────────────────────────
-  const handleTaskDragStart = (e: React.DragEvent, taskId: string) => {
+  // ── Task row drag handlers (stable references) ────────────────────────────
+  const handleTaskDragStart = useCallback((e: React.DragEvent, taskId: string) => {
+    setHoveredCell(null);
+    draggingTaskIdRef.current = taskId;
     setDraggingTaskId(taskId);
     e.dataTransfer.setData('dragType', 'task');
     e.dataTransfer.effectAllowed = 'move';
-  };
+  }, []);
 
-  const handleTaskDragOver = (e: React.DragEvent, taskId: string) => {
+  const handleTaskDragOver = useCallback((e: React.DragEvent, taskId: string) => {
     if (e.dataTransfer.getData('dragType') === 'group') return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (taskId === draggingTaskId) return;
+    if (taskId === draggingTaskIdRef.current) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setDragOverTaskId(taskId);
-    setTaskDropPos(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
-  };
+    const nextPos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+    if (dragOverTaskIdRef.current !== taskId) {
+      dragOverTaskIdRef.current = taskId;
+      setDragOverTaskId(taskId);
+    }
+    if (taskDropPosRef.current !== nextPos) {
+      taskDropPosRef.current = nextPos;
+      setTaskDropPos(nextPos);
+    }
+  }, []);
 
-  const handleTaskDragLeave = (e: React.DragEvent) => {
+  const handleTaskDragLeave = useCallback((e: React.DragEvent) => {
     if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      dragOverTaskIdRef.current = null;
       setDragOverTaskId(null);
     }
-  };
+  }, []);
 
-  const handleTaskDrop = (e: React.DragEvent, targetId: string) => {
+  const handleTaskDrop = useCallback((e: React.DragEvent, targetId: string) => {
     e.preventDefault();
-    if (!draggingTaskId || draggingTaskId === targetId) return;
-    reorderTasksGlobal(draggingTaskId, targetId, taskDropPos);
+    const draggedId = draggingTaskIdRef.current;
+    if (!draggedId || draggedId === targetId) return;
+    reorderTasksGlobalRef.current(draggedId, targetId, taskDropPosRef.current);
+    draggingTaskIdRef.current = null;
+    dragOverTaskIdRef.current = null;
     setDraggingTaskId(null);
     setDragOverTaskId(null);
-  };
+  }, []);
 
-  const handleTaskDragEnd = () => {
+  const handleTaskDragEnd = useCallback(() => {
+    draggingTaskIdRef.current = null;
+    dragOverTaskIdRef.current = null;
     setDraggingTaskId(null);
     setDragOverTaskId(null);
-  };
-
-  const isCompactCols = dates.length > 21;
+  }, []);
 
   return (
     <div className="guild-parchment text-stone-900 dark:text-amber-50 rounded-2xl border-2 border-amber-700/60 dark:border-amber-600/50 shadow-[0_20px_50px_rgba(0,0,0,0.6)] overflow-hidden flex flex-col flex-1 min-h-0 w-full">
@@ -274,7 +765,10 @@ export const GanttView: React.FC = () => {
           <div className="flex items-center gap-1 text-xs flex-wrap">
             <button
               type="button"
-              onClick={() => setStatusFilter(new Set())}
+              onClick={() => {
+                setHoveredCell(null);
+                setStatusFilter(new Set());
+              }}
               className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 border ${
                 statusFilter.size === 0
                   ? 'bg-amber-700 text-amber-50 border-amber-800 shadow-2xs'
@@ -327,7 +821,10 @@ export const GanttView: React.FC = () => {
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setTimeRange(item.key)}
+                onClick={() => {
+                  setHoveredCell(null);
+                  setTimeRange(item.key);
+                }}
                 className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
                   timeRange === item.key
                     ? 'bg-amber-600 text-white shadow-2xs'
@@ -375,20 +872,32 @@ export const GanttView: React.FC = () => {
       {/* Sub Toolbar: Legends */}
       <div className="px-3 sm:px-4 py-1.5 border-b border-amber-800/15 dark:border-amber-700/25 bg-[#f7edd5]/75 dark:bg-[#231c15]/90 flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-600 dark:text-stone-300 shrink-0">
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <span className="text-amber-900/70 dark:text-amber-300/70 font-bold">印记:</span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-xs bg-blue-500" />
-              <span>实质推进</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-xs bg-amber-500" />
-              <span>休整</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-xs bg-emerald-600" />
-              <span>通关达成</span>
-            </span>
+            {(
+              [
+                { key: 'progress', label: '实质推进' },
+                { key: 'rest', label: '休整' },
+                { key: 'completed', label: '通关达成' },
+              ] as const
+            ).map(({ key, label }) => {
+              const st = TIMELINE_TYPE_STYLE[key];
+              return (
+                <span key={key} className="flex items-center gap-1.5">
+                  <span className="relative inline-flex items-center w-5 h-3 shrink-0" aria-hidden="true">
+                    <span
+                      style={{ background: st.legendGradient }}
+                      className="w-4 h-[4.5px] rounded-full"
+                    />
+                    <span
+                      style={{ backgroundColor: st.ballColor }}
+                      className="w-2.5 h-2.5 rounded-full -ml-1"
+                    />
+                  </span>
+                  <span>{label}</span>
+                </span>
+              );
+            })}
           </div>
 
           <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-amber-800/20 dark:border-amber-700/30">
@@ -413,13 +922,14 @@ export const GanttView: React.FC = () => {
         </div>
 
         <span className="text-amber-900/70 dark:text-amber-300/70 text-[10px] font-medium">
-          点击任意方格即可直接打卡或修改 · 支持左右翻页查看历史
+          悬停有记录的线查看当天简略 · 点击任意方格打卡或修改
         </span>
       </div>
 
       {/* Main Gantt Grid Container — 100% Width-Adaptive, Zero Horizontal Scrollbar */}
       <div
         ref={scrollContainerRef}
+        onScroll={() => setHoveredCell(null)}
         className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative select-none w-full"
       >
         <div className="w-full min-w-0">
@@ -432,51 +942,42 @@ export const GanttView: React.FC = () => {
             {/* Adaptive Date Columns Grid */}
             <div
               className="flex-1 min-w-0 grid"
-              style={{ gridTemplateColumns: `repeat(${dates.length}, minmax(0, 1fr))` }}
+              style={{ gridTemplateColumns: `repeat(${dateColumns.length}, minmax(0, 1fr))` }}
             >
-              {dates.map((dateStr, idx) => {
-                const [, month, day] = dateStr.split('-');
-                const isToday = dateStr === todayStr;
-                const weekend = isWeekend(dateStr);
-                const weekdayStr = getWeekdayChinese(dateStr).replace('周', '');
-                const dayNum = parseInt(day, 10);
-                const showMonthLabel = !isCompactCols || dayNum === 1 || idx === 0;
-
-                return (
-                  <div
-                    key={dateStr}
-                    className={`min-w-0 flex flex-col items-center justify-center py-1.5 border-r border-amber-800/10 dark:border-amber-700/20 text-center transition-colors ${
-                      isToday
-                        ? 'bg-amber-500/20 dark:bg-amber-500/25'
-                        : weekend
-                        ? 'bg-amber-900/5 dark:bg-white/[0.03]'
-                        : ''
+              {dateColumns.map((col) => (
+                <div
+                  key={col.dateStr}
+                  className={`min-w-0 flex flex-col items-center justify-center py-1.5 border-r border-amber-800/10 dark:border-amber-700/20 text-center transition-colors ${
+                    col.isToday
+                      ? 'bg-amber-500/20 dark:bg-amber-500/25'
+                      : col.isWeekend
+                      ? 'bg-amber-900/5 dark:bg-white/[0.03]'
+                      : ''
+                  }`}
+                >
+                  <span
+                    className={`text-[9px] sm:text-[10px] leading-none ${
+                      col.isToday
+                        ? 'font-extrabold text-amber-800 dark:text-amber-300'
+                        : 'text-stone-500 dark:text-stone-400'
                     }`}
                   >
-                    <span
-                      className={`text-[9px] sm:text-[10px] leading-none ${
-                        isToday
-                          ? 'font-extrabold text-amber-800 dark:text-amber-300'
-                          : 'text-stone-500 dark:text-stone-400'
-                      }`}
-                    >
-                      {isCompactCols ? (isToday ? '今' : weekdayStr) : `周${weekdayStr}`}
-                    </span>
-                    <span
-                      className={`text-[10px] sm:text-xs font-mono mt-0.5 leading-none ${
-                        isToday
-                          ? 'w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center bg-amber-600 text-white rounded-full font-extrabold shadow-2xs'
-                          : 'text-stone-800 dark:text-amber-100 font-semibold'
-                      }`}
-                    >
-                      {dayNum}
-                    </span>
-                    <span className="text-[8px] sm:text-[9px] text-stone-400 dark:text-stone-500 leading-none mt-0.5 h-2.5">
-                      {showMonthLabel ? `${parseInt(month, 10)}月` : ''}
-                    </span>
-                  </div>
-                );
-              })}
+                    {isCompactCols ? (col.isToday ? '今' : col.weekdayShort) : col.weekdayFull}
+                  </span>
+                  <span
+                    className={`text-[10px] sm:text-xs font-mono mt-0.5 leading-none ${
+                      col.isToday
+                        ? 'w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center bg-amber-600 text-white rounded-full font-extrabold shadow-2xs'
+                        : 'text-stone-800 dark:text-amber-100 font-semibold'
+                    }`}
+                  >
+                    {col.dayNum}
+                  </span>
+                  <span className="text-[8px] sm:text-[9px] text-stone-400 dark:text-stone-500 leading-none mt-0.5 h-2.5">
+                    {col.monthLabel}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -519,148 +1020,27 @@ export const GanttView: React.FC = () => {
                 </div>
 
                 {/* Task Rows */}
-                {groupTasks.map((task) => {
-                  const statusStyle = getRowStatusClasses(task.status);
-                  const isTaskDragOver = dragOverTaskId === task.id;
-                  const isDraggingThisTask = draggingTaskId === task.id;
-
-                  return (
-                    <div
-                      key={task.id}
-                      draggable
-                      onDragStart={(e) => handleTaskDragStart(e, task.id)}
-                      onDragOver={(e) => handleTaskDragOver(e, task.id)}
-                      onDragLeave={handleTaskDragLeave}
-                      onDrop={(e) => handleTaskDrop(e, task.id)}
-                      onDragEnd={handleTaskDragEnd}
-                      className={`flex w-full min-w-0 border-b ${statusStyle.border} ${statusStyle.rowBg} transition-colors group relative ${
-                        isDraggingThisTask ? 'opacity-40' : ''
-                      }`}
-                    >
-                      {isTaskDragOver && taskDropPos === 'before' && (
-                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-500 z-30 pointer-events-none" />
-                      )}
-                      {isTaskDragOver && taskDropPos === 'after' && (
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500 z-30 pointer-events-none" />
-                      )}
-
-                      {/* Task Label Card */}
-                      <div className="w-40 sm:w-52 md:w-60 shrink-0 px-2 py-2 border-r border-amber-800/20 dark:border-amber-700/35 flex items-center gap-1.5 min-w-0">
-                        <GripVertical className="w-3.5 h-3.5 text-amber-800/25 dark:text-amber-300/25 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing hidden sm:block" />
-                        <div
-                          onClick={() => openTaskDetail(task.id)}
-                          className="flex items-center gap-1.5 min-w-0 flex-1 cursor-pointer hover:opacity-85 transition-opacity"
-                        >
-                          <span
-                            className={`shrink-0 text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded font-bold ${statusStyle.badge}`}
-                          >
-                            {statusStyle.statusLabel}
-                          </span>
-                          <span
-                            className="text-xs font-bold text-stone-900 dark:text-amber-50 truncate group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors"
-                            title={task.title}
-                          >
-                            {task.title}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Adaptive Timeline Date Grid Cells */}
-                      <div
-                        className="flex-1 min-w-0 grid items-stretch"
-                        style={{ gridTemplateColumns: `repeat(${dates.length}, minmax(0, 1fr))` }}
-                      >
-                        {dates.map((dateStr, dateIdx) => {
-                          const log = logsLookup.get(`${task.id}_${dateStr}`);
-                          const isToday = dateStr === todayStr;
-                          const weekend = isWeekend(dateStr);
-
-                          const prevDate = dateIdx > 0 ? dates[dateIdx - 1] : null;
-                          const nextDate = dateIdx < dates.length - 1 ? dates[dateIdx + 1] : null;
-                          const prevLog = prevDate ? logsLookup.get(`${task.id}_${prevDate}`) : null;
-                          const nextLog = nextDate ? logsLookup.get(`${task.id}_${nextDate}`) : null;
-
-                          const connectedLeft = !!(log && prevLog);
-                          const connectedRight = !!(log && nextLog);
-
-                          const roundedClass = log
-                            ? [
-                                !connectedLeft ? 'rounded-l-md' : '',
-                                !connectedRight ? 'rounded-r-md' : '',
-                              ]
-                                .filter(Boolean)
-                                .join(' ') || 'rounded-none'
-                            : '';
-
-                          const barColor = log
-                            ? log.progressType === 'progress'
-                              ? 'bg-blue-500'
-                              : log.progressType === 'rest'
-                              ? 'bg-amber-500'
-                              : 'bg-emerald-600'
-                            : '';
-
-                          return (
-                            <div
-                              key={dateStr}
-                              onClick={() => {
-                                setHoveredCell(null);
-                                openCheckInModal(task, dateStr);
-                              }}
-                              onMouseEnter={(e) => {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                const clampedX = Math.max(
-                                  130,
-                                  Math.min(window.innerWidth - 130, rect.left + rect.width / 2)
-                                );
-                                setHoveredCell({
-                                  x: clampedX,
-                                  y: rect.top,
-                                  task,
-                                  date: dateStr,
-                                  log,
-                                });
-                              }}
-                              onMouseLeave={() => setHoveredCell(null)}
-                              className={`min-w-0 h-full flex items-center justify-center border-r border-amber-800/10 dark:border-amber-700/15 relative cursor-pointer group/cell ${
-                                isToday
-                                  ? 'bg-amber-500/15 dark:bg-amber-500/20'
-                                  : weekend
-                                  ? 'bg-black/[0.025] dark:bg-white/[0.02]'
-                                  : ''
-                              } hover:bg-amber-500/20 dark:hover:bg-amber-500/30 transition-colors`}
-                            >
-                              {isToday && (
-                                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-amber-600/50 pointer-events-none" />
-                              )}
-
-                              {log ? (
-                                <>
-                                  <div
-                                    className={`absolute top-1/2 -translate-y-1/2 h-5 sm:h-6 transition-all group-hover/cell:h-7 pointer-events-none ${barColor} ${roundedClass} ${
-                                      connectedLeft ? 'left-0' : 'left-[10%]'
-                                    } ${connectedRight ? 'right-0' : 'right-[10%]'}`}
-                                  />
-                                  {!connectedRight && (
-                                    <span className="relative flex items-center justify-center pointer-events-none z-[1]">
-                                      {log.progressType === 'completed' ? (
-                                        <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-2 text-white" />
-                                      ) : (
-                                        <span className="w-1.5 h-1.5 rounded-full bg-white/85" />
-                                      )}
-                                    </span>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="w-1.5 h-1.5 rounded-full bg-transparent group-hover/cell:bg-amber-500/60 transition-colors" />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                {groupTasks.map((task) => (
+                  <GanttTaskRow
+                    key={task.id}
+                    task={task}
+                    dateColumns={dateColumns}
+                    nextWindowDate={nextWindowDate}
+                    taskLogsByDate={logsByTaskMap.get(task.id)}
+                    segments={segmentsByTaskId.get(task.id) ?? EMPTY_SEGMENTS}
+                    isDragging={draggingTaskId === task.id}
+                    dragOverPos={dragOverTaskId === task.id ? taskDropPos : null}
+                    onOpenDetail={handleOpenDetail}
+                    onClickCell={handleClickCell}
+                    onHoverLog={handleHoverLog}
+                    onLeaveLog={handleLeaveLog}
+                    onDragStart={handleTaskDragStart}
+                    onDragOver={handleTaskDragOver}
+                    onDragLeave={handleTaskDragLeave}
+                    onDrop={handleTaskDrop}
+                    onDragEnd={handleTaskDragEnd}
+                  />
+                ))}
 
                 {isGroupDragOver && groupDropPos === 'after' && (
                   <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500 z-30 pointer-events-none" />
@@ -690,80 +1070,87 @@ export const GanttView: React.FC = () => {
         </div>
       </div>
 
-      {/* Lightweight Hover Tooltip */}
-      {hoveredCell && (
-        <div
-          style={{
-            position: 'fixed',
-            left: `${hoveredCell.x}px`,
-            top: `${hoveredCell.y - 10}px`,
-            transform: 'translate(-50%, -100%)',
-            pointerEvents: 'none',
-            zIndex: 60,
-          }}
-          className="bg-[#1c140e]/95 text-amber-50 border border-amber-500/50 rounded-xl px-3 py-2 shadow-2xl text-xs max-w-xs"
-        >
-          <div className="flex items-center justify-between gap-3 text-[11px] text-amber-300/80 border-b border-amber-700/40 pb-1 mb-1.5">
-            <span className="font-mono">{hoveredCell.date}</span>
-            <span>{getWeekdayChinese(hoveredCell.date)}</span>
-          </div>
+      {/* Hover Tooltip — Mounted to document.body to avoid backdrop-filter fixed containing block offset */}
+      {typeof document !== 'undefined' &&
+        hoveredCell &&
+        createPortal(
+          (() => {
+            const { log, task, colMeta, cumulativeHours } = hoveredCell;
+            const logRestMinutes =
+              typeof log.totalRestMinutes === 'number' && !isNaN(log.totalRestMinutes)
+                ? log.totalRestMinutes
+                : Array.isArray(log.restSessions)
+                  ? log.restSessions.reduce((s, r) => s + r.durationMinutes, 0)
+                  : 0;
+            const sessionCount = Array.isArray(log.workSessions) ? log.workSessions.length : 0;
+            const typeStyle = TIMELINE_TYPE_STYLE[log.progressType];
 
-          <div className="font-bold text-xs line-clamp-1 mb-1">{hoveredCell.task.title}</div>
-
-          {hoveredCell.log ? (
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      hoveredCell.log.progressType === 'progress'
-                        ? 'bg-blue-400'
-                        : hoveredCell.log.progressType === 'rest'
-                        ? 'bg-amber-400'
-                        : 'bg-emerald-400'
-                    }`}
-                  />
-                  <span className="text-[11px] font-medium">
-                    {PROGRESS_TYPE_CONFIG[hoveredCell.log.progressType].label}
-                  </span>
+            return (
+              <div
+                style={{
+                  position: 'fixed',
+                  left: `${hoveredCell.x}px`,
+                  top: `${hoveredCell.y}px`,
+                  transform: hoveredCell.placeBelow
+                    ? 'translate(-50%, 0)'
+                    : 'translate(-50%, -100%)',
+                  pointerEvents: 'none',
+                  zIndex: 60,
+                }}
+                className="bg-[#1c140e]/95 text-amber-50 border border-amber-500/50 rounded-xl px-3 py-2 shadow-2xl text-xs max-w-xs"
+              >
+                <div className="flex items-center justify-between gap-3 text-[11px] text-amber-300/80 border-b border-amber-700/40 pb-1 mb-1.5">
+                  <span className="font-mono">{colMeta.dateStr}</span>
+                  <span>{colMeta.weekdayFull}</span>
                 </div>
-                {typeof hoveredCell.log.hours === 'number' && hoveredCell.log.hours > 0 && (
-                  <span className="text-[10px] font-semibold text-sky-300 bg-sky-950/80 px-1.5 py-0.5 rounded border border-sky-800/80">
-                    投入 {formatHours(hoveredCell.log.hours)}
-                  </span>
+
+                <div className="font-bold text-xs line-clamp-1 mb-1">{task.title}</div>
+
+                <div className="flex items-center flex-wrap gap-1.5 mb-1">
+                  <div className="flex items-center gap-1.5 mr-auto">
+                    <span className={`w-2 h-2 rounded-full ${typeStyle.dotClass}`} />
+                    <span className="text-[11px] font-medium">
+                      {PROGRESS_TYPE_CONFIG[log.progressType].label}
+                    </span>
+                  </div>
+                  {sessionCount > 1 && (
+                    <span className="text-[10px] font-medium text-amber-200/80 bg-amber-950/70 px-1.5 py-0.5 rounded border border-amber-800/60">
+                      {sessionCount} 次记录
+                    </span>
+                  )}
+                  {typeof log.hours === 'number' && log.hours > 0 && (
+                    <span className="text-[10px] font-semibold text-sky-300 bg-sky-950/80 px-1.5 py-0.5 rounded border border-sky-800/80">
+                      投入 {formatHours(log.hours)}
+                    </span>
+                  )}
+                  {logRestMinutes > 0 && (
+                    <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800/80">
+                      休整 {formatRestDuration(logRestMinutes)}
+                    </span>
+                  )}
+                </div>
+
+                {log.note ? (
+                  <div className="text-[11px] text-amber-100/90 bg-black/35 p-1.5 rounded mt-1 line-clamp-3 italic">
+                    "{log.note}"
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-amber-200/60">无附加日志笔记</div>
+                )}
+
+                {cumulativeHours > 0 && (
+                  <div className="text-[10px] text-amber-200/75 mt-1.5 pt-1 border-t border-amber-700/40 flex justify-between">
+                    <span>截至当日累计:</span>
+                    <span className="font-semibold text-amber-300">
+                      {formatHours(cumulativeHours)}
+                    </span>
+                  </div>
                 )}
               </div>
-              {hoveredCell.log.note ? (
-                <div className="text-[11px] text-amber-100/90 bg-black/35 p-1.5 rounded mt-1 line-clamp-3 italic">
-                  "{hoveredCell.log.note}"
-                </div>
-              ) : (
-                <div className="text-[10px] text-amber-200/60">无附加日志笔记</div>
-              )}
-              {getTaskTotalHours(hoveredCell.task.id, hoveredCell.date) > 0 && (
-                <div className="text-[10px] text-amber-200/75 mt-1.5 pt-1 border-t border-amber-700/40 flex justify-between">
-                  <span>截至当日累计:</span>
-                  <span className="font-semibold text-amber-300">
-                    {formatHours(getTaskTotalHours(hoveredCell.task.id, hoveredCell.date))}
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div>
-              <div className="text-[11px] text-amber-200/70 italic">本日暂无打卡（点击即可快速打卡）</div>
-              {getTaskTotalHours(hoveredCell.task.id, hoveredCell.date) > 0 && (
-                <div className="text-[10px] text-amber-200/75 mt-1.5 pt-1 border-t border-amber-700/40 flex justify-between">
-                  <span>截至当日累计:</span>
-                  <span className="font-semibold text-amber-300">
-                    {formatHours(getTaskTotalHours(hoveredCell.task.id, hoveredCell.date))}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+            );
+          })(),
+          document.body
+        )}
     </div>
   );
 };
