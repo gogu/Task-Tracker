@@ -46,6 +46,7 @@ export interface ExtractedWorkInterval {
   hours: number;
   note?: string;
   progressType?: ProgressType;
+  isBackfill?: boolean;
   restSessions: RestSession[];
   totalRestMinutes: number;
   isEstimated: boolean;
@@ -172,6 +173,7 @@ export function extractLogWorkIntervals(log: DailyLog): ExtractedWorkInterval[] 
         hours: ws.hours,
         note: ws.note !== undefined ? ws.note : isSingle ? log.note : undefined,
         progressType: ws.progressType ?? (isSingle ? log.progressType : 'progress'),
+        isBackfill: Boolean(ws.isBackfill ?? (isSingle ? log.isBackfill : false)),
         restSessions,
         totalRestMinutes,
         isEstimated: false,
@@ -200,6 +202,7 @@ export function extractLogWorkIntervals(log: DailyLog): ExtractedWorkInterval[] 
           hours: round1(log.hours),
           note: log.note,
           progressType: log.progressType,
+          isBackfill: Boolean(log.isBackfill),
           restSessions: allLogRests,
           totalRestMinutes,
           isEstimated: true,
@@ -292,6 +295,7 @@ export function computeHourlyDistribution(logs: DailyLog[]): HourlyDistributionR
   logs.forEach((log) => {
     const intervals = extractLogWorkIntervals(log);
     intervals.forEach((interval) => {
+      if (interval.isBackfill) return;
       totalWorkHours += interval.hours;
       distributeValueAcrossHours(
         interval.startTime,
@@ -504,6 +508,7 @@ export function computeTaskTimeSlotAffinity(
     const intervals = extractLogWorkIntervals(log);
     if (intervals.length > 0) {
       intervals.forEach((iv) => {
+        if (iv.isBackfill) return;
         const effHours =
           typeof iv.hours === 'number' && !isNaN(iv.hours) && iv.hours > 0 ? iv.hours : 0;
         const sessionWeight = (1.0 + Math.min(effHours, 4) * 0.5) * recencyMultiplier;
@@ -517,7 +522,7 @@ export function computeTaskTimeSlotAffinity(
           });
         }
       });
-    } else if (log.createdAt) {
+    } else if (log.createdAt && !log.isBackfill) {
       const created = new Date(log.createdAt);
       if (!isNaN(created.getTime())) {
         const h = created.getHours();

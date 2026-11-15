@@ -49,6 +49,7 @@ export const QuickCheckInModal: React.FC = () => {
   const [note, setNote] = useState<string>('');
   const [hours, setHours] = useState<string>('');
   const [restMinutes, setRestMinutes] = useState<string>('');
+  const [isBackfill, setIsBackfill] = useState<boolean>(false);
   const [markAsCompleted, setMarkAsCompleted] = useState<boolean>(false);
   const [existingLogId, setExistingLogId] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
@@ -78,11 +79,18 @@ export const QuickCheckInModal: React.FC = () => {
           ? String(existing.hours)
           : ''
       );
+      setIsBackfill(
+        Boolean(
+          existing.isBackfill ||
+            (existing.workSessions?.length === 1 && existing.workSessions[0].isBackfill)
+        )
+      );
       setMarkAsCompleted(existing.progressType === 'completed' || taskStatus === 'done');
     } else {
       setProgressType('progress');
       setNote('');
       setHours('');
+      setIsBackfill(false);
       setMarkAsCompleted(false);
     }
   };
@@ -127,6 +135,7 @@ export const QuickCheckInModal: React.FC = () => {
       progressType: effectiveType,
       hours: validHours,
       note: note.trim(),
+      isBackfill,
       markTaskAsCompleted: isCompleted,
       mode: submitMode,
       restMinutes: validRest,
@@ -146,6 +155,7 @@ export const QuickCheckInModal: React.FC = () => {
 
     if (
       selectedDate === todayStr &&
+      !isBackfill &&
       effectiveType !== 'rest' &&
       validHours !== undefined &&
       validHours > 0.3 &&
@@ -411,8 +421,14 @@ export const QuickCheckInModal: React.FC = () => {
                               <span className="font-mono font-bold text-amber-700 dark:text-amber-300">
                                 #{sIdx + 1}
                               </span>
-                              <span className="font-mono text-sky-700 dark:text-sky-300">
-                                {iv.startTime}-{iv.endTime}
+                              <span
+                                className={`font-mono ${
+                                  iv.isBackfill
+                                    ? 'text-amber-700 dark:text-amber-300'
+                                    : 'text-sky-700 dark:text-sky-300'
+                                }`}
+                              >
+                                {iv.isBackfill ? '🏷️ 补标（不计时段）' : `${iv.startTime}-${iv.endTime}`}
                               </span>
                               <span className="font-mono font-bold text-blue-600 dark:text-blue-300">
                                 {formatHours(iv.hours)}
@@ -613,8 +629,25 @@ export const QuickCheckInModal: React.FC = () => {
               />
             </div>
 
-            {/* Checkbox: Mark as completed */}
-            <div className="pt-0.5">
+            {/* Checkboxes: Backfill & Mark as completed */}
+            <div className="pt-0.5 space-y-2.5">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none group">
+                <input
+                  type="checkbox"
+                  checked={isBackfill}
+                  onChange={(e) => setIsBackfill(e.target.checked)}
+                  className="mt-0.5 rounded border-zinc-300 text-amber-600 focus:ring-amber-500"
+                />
+                <div className="text-xs">
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200 group-hover:text-amber-600 transition-colors">
+                    补标记录（计入时长但不统计时段）
+                  </span>
+                  <p className="text-zinc-400 dark:text-zinc-500 text-[11px] mt-0.5">
+                    用于事后补录时长：会正常累加至当日与任务总时长，但不纳入 24 小时时段分布与常驻时段分析。
+                  </p>
+                </div>
+              </label>
+
               <label className="flex items-start gap-2.5 cursor-pointer select-none group">
                 <input
                   type="checkbox"

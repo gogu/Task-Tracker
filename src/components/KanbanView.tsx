@@ -581,6 +581,7 @@ export const KanbanView: React.FC = () => {
   const [checkInHours, setCheckInHours] = useState<string>('');
   const [checkInNote, setCheckInNote] = useState<string>('');
   const [checkInRestMinutes, setCheckInRestMinutes] = useState<string>('');
+  const [checkInIsBackfill, setCheckInIsBackfill] = useState<boolean>(false);
   const [markAsCompleted, setMarkAsCompleted] = useState<boolean>(false);
   const lastCheckInInitKeyRef = useRef<string>('');
 
@@ -1087,11 +1088,18 @@ export const KanbanView: React.FC = () => {
           typeof existing.hours === 'number' && !isNaN(existing.hours) ? String(existing.hours) : ''
         );
         setCheckInNote(existing.note || '');
+        setCheckInIsBackfill(
+          Boolean(
+            existing.isBackfill ||
+              (existing.workSessions?.length === 1 && existing.workSessions[0].isBackfill)
+          )
+        );
         setMarkAsCompleted(existing.progressType === 'completed' || task.status === 'done');
       } else {
         setCheckInType('progress');
         setCheckInHours('');
         setCheckInNote('');
+        setCheckInIsBackfill(false);
         setMarkAsCompleted(false);
       }
     },
@@ -1850,6 +1858,7 @@ export const KanbanView: React.FC = () => {
       progressType: effectiveType,
       hours: validHours,
       note: checkInNote.trim(),
+      isBackfill: checkInIsBackfill,
       markTaskAsCompleted: markAsCompleted || effectiveType === 'completed',
       mode: submitMode,
       restMinutes: validRest,
@@ -1876,6 +1885,7 @@ export const KanbanView: React.FC = () => {
 
     const shouldOfferRest =
       checkInDate === todayStr &&
+      !checkInIsBackfill &&
       effectiveType !== 'rest' &&
       validHours !== undefined &&
       validHours > 0.3 &&
@@ -4000,9 +4010,13 @@ export const KanbanView: React.FC = () => {
                                           intervals.map((iv) => (
                                             <span
                                               key={iv.id}
-                                              className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                                              className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
+                                                iv.isBackfill
+                                                  ? 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
+                                                  : 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+                                              }`}
                                             >
-                                              🕒 {iv.startTime}-{iv.endTime}
+                                              {iv.isBackfill ? '🏷️ 补标（不计时段）' : `🕒 ${iv.startTime}-${iv.endTime}`}
                                             </span>
                                           ))}
                                         {!hasMultiSessions &&
@@ -4026,8 +4040,14 @@ export const KanbanView: React.FC = () => {
                                               <span className="font-mono font-bold text-amber-800 dark:text-amber-300">
                                                 #{sIdx + 1}
                                               </span>
-                                              <span className="font-mono text-sky-700 dark:text-sky-300">
-                                                {iv.startTime}-{iv.endTime}
+                                              <span
+                                                className={`font-mono ${
+                                                  iv.isBackfill
+                                                    ? 'text-amber-700 dark:text-amber-200'
+                                                    : 'text-sky-700 dark:text-sky-300'
+                                                }`}
+                                              >
+                                                {iv.isBackfill ? '🏷️ 补标（不计时段）' : `${iv.startTime}-${iv.endTime}`}
                                               </span>
                                               {iv.hours > 0 && (
                                                 <span className="font-mono font-bold text-blue-700 dark:text-blue-300">
@@ -4210,8 +4230,14 @@ export const KanbanView: React.FC = () => {
                                         <span className="font-mono font-extrabold text-amber-800 dark:text-amber-300">
                                           #{idx + 1} {idx > 0 ? '(追加)' : ''}
                                         </span>
-                                        <span className="font-mono text-sky-700 dark:text-sky-300 font-semibold">
-                                          🕒 {iv.startTime}-{iv.endTime}
+                                        <span
+                                          className={`font-mono font-semibold ${
+                                            iv.isBackfill
+                                              ? 'text-amber-700 dark:text-amber-200'
+                                              : 'text-sky-700 dark:text-sky-300'
+                                          }`}
+                                        >
+                                          {iv.isBackfill ? '🏷️ 补标（不计时段）' : `🕒 ${iv.startTime}-${iv.endTime}`}
                                         </span>
                                         <span className="font-mono font-bold text-blue-700 dark:text-blue-300">
                                           {iv.hours > 0 ? formatHours(iv.hours) : '0.0h'}
@@ -4378,6 +4404,18 @@ export const KanbanView: React.FC = () => {
                             ))}
                           </div>
                         </div>
+                        <label className="flex items-center gap-2 pt-1 text-xs sm:text-sm text-amber-900 dark:text-amber-200 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={checkInIsBackfill}
+                            onChange={(e) => setCheckInIsBackfill(e.target.checked)}
+                            className="w-4 h-4 rounded border-amber-500 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span className="font-bold">补标记录</span>
+                          <span className="text-[11px] text-stone-500 dark:text-stone-400">
+                            （计入当日与累计时长，不统计进每日时段分布）
+                          </span>
+                        </label>
                       </div>
 
                       {/* Independent Rest Duration Input (Optional) */}

@@ -9,6 +9,7 @@ export interface WorkSession {
   hours: number;                // 本次独立时长（小时）
   note?: string;                // 本次独立备注
   progressType?: ProgressType;  // 本次独立状态
+  isBackfill?: boolean;         // 补标标记：计入时长但不统计时段
   restSessions?: RestSession[]; // 本次关联的事后休息记录
   totalRestMinutes?: number;    // 本次关联的事后休息总分钟数
   recordedAt: string;           // ISO timestamp
@@ -53,6 +54,7 @@ export interface DailyLog {
   progressType: ProgressType;    // 无实质进展/休息 | 有实质推进 | 通关/全量完成
   hours?: number;                // 本次打卡投入时间（小时，支持一位小数，如 1.5）
   note?: string;                 // 日志备注（如“通关第3章”）
+  isBackfill?: boolean;          // 当日记录是否为补标（不纳入时段统计）
   workSessions?: WorkSession[];  // 当日每次汇报的推进时段记录
   restSessions?: RestSession[];  // 当日事后休息时段记录
   totalRestMinutes?: number;     // 当日累计休息时长（分钟）

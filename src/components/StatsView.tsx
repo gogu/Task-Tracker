@@ -1562,8 +1562,14 @@ export const StatsView: React.FC = () => {
                                   <span className="font-mono font-bold text-amber-800 dark:text-amber-300">
                                     #{sIdx + 1}
                                   </span>
-                                  <span className="font-mono text-sky-700 dark:text-sky-300">
-                                    🕒 {iv.startTime}-{iv.endTime}
+                                  <span
+                                    className={`font-mono ${
+                                      iv.isBackfill
+                                        ? 'text-amber-700 dark:text-amber-300'
+                                        : 'text-sky-700 dark:text-sky-300'
+                                    }`}
+                                  >
+                                    {iv.isBackfill ? '🏷️ 补标（不计时段）' : `🕒 ${iv.startTime}-${iv.endTime}`}
                                   </span>
                                   <span className="font-mono font-bold text-stone-800 dark:text-amber-100">
                                     {formatHours(iv.hours)}
@@ -1603,9 +1609,13 @@ export const StatsView: React.FC = () => {
                               {workIntervals.map((iv) => (
                                 <span
                                   key={iv.id}
-                                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/20"
+                                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                                    iv.isBackfill
+                                      ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/25'
+                                      : 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/20'
+                                  }`}
                                 >
-                                  🕒 {iv.startTime}-{iv.endTime}
+                                  {iv.isBackfill ? '🏷️ 补标（不计时段）' : `🕒 ${iv.startTime}-${iv.endTime}`}
                                 </span>
                               ))}
                               {restList.map((rs) => (

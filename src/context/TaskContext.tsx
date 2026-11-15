@@ -57,6 +57,7 @@ interface TaskContextType {
     progressType: ProgressType;
     hours?: number;
     note?: string;
+    isBackfill?: boolean;
     markTaskAsCompleted?: boolean;
     mode?: 'append' | 'replace';
     restMinutes?: number;
@@ -845,6 +846,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           ...ws,
           note: ws.note !== undefined ? ws.note : isSingle ? log.note : undefined,
           progressType: ws.progressType ?? (isSingle ? log.progressType : 'progress'),
+          isBackfill: ws.isBackfill ?? (isSingle ? log.isBackfill : undefined),
           restSessions: restSessions.length > 0 ? restSessions : undefined,
           totalRestMinutes: restSessions.reduce((s, r) => s + r.durationMinutes, 0) || undefined,
         };
@@ -867,6 +869,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         hours: prevHours,
         note: log.note,
         progressType: log.progressType,
+        isBackfill: log.isBackfill || undefined,
         restSessions: attachedRests.length > 0 ? attachedRests : undefined,
         totalRestMinutes: totalRestMinutes > 0 ? totalRestMinutes : undefined,
         recordedAt: log.createdAt || created.toISOString(),
@@ -877,7 +880,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const aggregateLogFromSessions = (
     base: Omit<
       DailyLog,
-      'progressType' | 'hours' | 'note' | 'workSessions' | 'restSessions' | 'totalRestMinutes'
+      'progressType' | 'hours' | 'note' | 'isBackfill' | 'workSessions' | 'restSessions' | 'totalRestMinutes'
     >,
     sessions: WorkSession[],
     extraUnlinkedRests: RestSession[] = []
@@ -890,6 +893,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const hasExplicitHours = sessions.some(
       (ws) => typeof ws.hours === 'number' && !isNaN(ws.hours) && ws.hours > 0
     );
+    const allBackfill = sessions.length > 0 && sessions.every((ws) => Boolean(ws.isBackfill));
 
     const noteParts = sessions.map((ws) => ws.note?.trim()).filter(Boolean) as string[];
     const mergedNote = noteParts.length > 0 ? noteParts.join(' ｜ ') : undefined;
@@ -916,6 +920,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       progressType: aggProgress,
       hours: hasExplicitHours ? roundedHours : undefined,
       note: mergedNote,
+      isBackfill: allBackfill ? true : undefined,
       workSessions: sessions,
       restSessions: allRests.length > 0 ? allRests : undefined,
       totalRestMinutes: totalRestMinutes > 0 ? totalRestMinutes : undefined,
@@ -928,7 +933,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     progressType: ProgressType,
     restMinutesVal: number | undefined,
     sessionStartTime?: string,
-    sessionEndTime?: string
+    sessionEndTime?: string,
+    isBackfill?: boolean
   ): WorkSession => {
     const now = new Date();
     const safeHours =
@@ -965,6 +971,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       hours: safeHours,
       note: noteVal?.trim() || undefined,
       progressType,
+      isBackfill: isBackfill ? true : undefined,
       restSessions,
       totalRestMinutes: parsedRest > 0 ? parsedRest : undefined,
       recordedAt: now.toISOString(),
@@ -977,6 +984,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     progressType,
     note,
     hours,
+    isBackfill,
     markTaskAsCompleted,
     mode = 'replace',
     restMinutes,
@@ -988,6 +996,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     progressType: ProgressType;
     note?: string;
     hours?: number;
+    isBackfill?: boolean;
     markTaskAsCompleted?: boolean;
     mode?: 'append' | 'replace';
     restMinutes?: number;
@@ -1028,7 +1037,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           progressType,
           parsedRestMinutes,
           sessionStartTime,
-          sessionEndTime
+          sessionEndTime,
+          isBackfill
         );
         savedLog = aggregateLogFromSessions(
           {
@@ -1049,7 +1059,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             progressType,
             parsedRestMinutes,
             sessionStartTime,
-            sessionEndTime
+            sessionEndTime,
+            isBackfill
           );
           const keptRests = prevSingle?.restSessions || [];
           const mergedRests = [
@@ -1095,6 +1106,14 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             progressType,
             hours: parsedHours,
             note: note?.trim() || undefined,
+            isBackfill: isBackfill !== undefined ? isBackfill || undefined : existingLog.isBackfill,
+            workSessions:
+              isBackfill !== undefined
+                ? existingLog.workSessions?.map((ws) => ({
+                    ...ws,
+                    isBackfill: isBackfill || undefined,
+                  }))
+                : existingLog.workSessions,
             restSessions: nextRestSessions.length > 0 ? nextRestSessions : undefined,
             totalRestMinutes: totalRestMinutes > 0 ? totalRestMinutes : undefined,
           };
@@ -1109,7 +1128,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         progressType,
         parsedRestMinutes,
         sessionStartTime,
-        sessionEndTime
+        sessionEndTime,
+        isBackfill
       );
       savedLog = aggregateLogFromSessions(
         {

@@ -399,8 +399,14 @@ export const TaskDetailDrawer: React.FC = () => {
                                             >
                                               {sCfg.label}
                                             </span>
-                                            <span className="font-mono px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/70 dark:border-sky-800/70">
-                                              🕒 {iv.startTime}-{iv.endTime}
+                                            <span
+                                              className={`font-mono px-1.5 py-0.2 rounded border ${
+                                                iv.isBackfill
+                                                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/70 dark:border-amber-800/70'
+                                                  : 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200/70 dark:border-sky-800/70'
+                                              }`}
+                                            >
+                                              {iv.isBackfill ? '🏷️ 补标（不计时段）' : `🕒 ${iv.startTime}-${iv.endTime}`}
                                             </span>
                                             {iv.hours > 0 && (
                                               <span className="font-mono font-bold text-blue-700 dark:text-blue-300">
@@ -435,14 +441,20 @@ export const TaskDetailDrawer: React.FC = () => {
                                       {intervals.map((iv) => (
                                         <span
                                           key={iv.id}
-                                          className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/70 dark:border-sky-800/70"
+                                          className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                                            iv.isBackfill
+                                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/70 dark:border-amber-800/70'
+                                              : 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200/70 dark:border-sky-800/70'
+                                          }`}
                                           title={
-                                            iv.isEstimated
-                                              ? '根据历史打卡时间推算的进行时段'
-                                              : '记录的实际进行时段'
+                                            iv.isBackfill
+                                              ? '补标记录：计入时长但不纳入时段统计'
+                                              : iv.isEstimated
+                                                ? '根据历史打卡时间推算的进行时段'
+                                                : '记录的实际进行时段'
                                           }
                                         >
-                                          🕒 {iv.startTime}-{iv.endTime}
+                                          {iv.isBackfill ? '🏷️ 补标（不计时段）' : `🕒 ${iv.startTime}-${iv.endTime}`}
                                         </span>
                                       ))}
                                       {restSessions.map((rs) => (
