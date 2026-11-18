@@ -59,6 +59,7 @@ import {
 import {
   formatTimeHHMM,
   addMinutesToTimeHHMM,
+  parseHHMMToMinutes,
   computeTaskTimeAndRestProfile,
   computeTaskTimeSlotAffinity,
   TaskTimeSlotAffinity,
@@ -1180,10 +1181,51 @@ export const KanbanView: React.FC = () => {
     return [...unchecked, ...checked];
   }, [activeInProgressTasks, getLog, todayStr, taskTimeAffinityMap]);
 
-  const pinnedActiveTasks = useMemo(
-    () => prioritizedInProgressTasks.slice(0, 5),
-    [prioritizedInProgressTasks]
-  );
+  const pinnedActiveTasks = useMemo(() => {
+    const MAX_PINNED = 5;
+    const topTasks = prioritizedInProgressTasks.slice(0, MAX_PINNED);
+    if (topTasks.length === 0) return topTasks;
+
+    let latestCheckedTask: TaskItem | null = null;
+    let latestTimestamp = -1;
+    let latestEndMin = -1;
+
+    for (const task of activeInProgressTasks) {
+      const todayLog = getLog(task.id, todayStr);
+      if (!todayLog) continue;
+
+      let ts = todayLog.createdAt ? Date.parse(todayLog.createdAt) : NaN;
+      if (isNaN(ts)) ts = 0;
+
+      let endMin = -1;
+      if (Array.isArray(todayLog.workSessions) && todayLog.workSessions.length > 0) {
+        for (const ws of todayLog.workSessions) {
+          const wsTs = ws.recordedAt ? Date.parse(ws.recordedAt) : NaN;
+          const wsEndMin = ws.endTime ? parseHHMMToMinutes(ws.endTime) : -1;
+          if (!isNaN(wsTs) && (wsTs > ts || (wsTs === ts && wsEndMin > endMin))) {
+            ts = wsTs;
+            endMin = wsEndMin;
+          }
+        }
+      }
+
+      if (ts > latestTimestamp || (ts === latestTimestamp && endMin > latestEndMin)) {
+        latestTimestamp = ts;
+        latestEndMin = endMin;
+        latestCheckedTask = task;
+      }
+    }
+
+    if (!latestCheckedTask) {
+      return topTasks;
+    }
+
+    if (topTasks.some((t) => t.id === latestCheckedTask.id)) {
+      return topTasks;
+    }
+
+    return [latestCheckedTask, ...topTasks.slice(0, MAX_PINNED - 1)];
+  }, [prioritizedInProgressTasks, activeInProgressTasks, getLog, todayStr]);
 
   const sortedAllTags = useMemo(() => {
     return [...allTags].sort((a, b) => {
@@ -2896,14 +2938,12 @@ export const KanbanView: React.FC = () => {
               </div>
             )}
 
-            {/* Shared Portrait Stage (decoupled fixed frame so mode-switch & dialogue height never shift or shrink the sprite) */}
+            {/* Shared Portrait Stage (decoupled fixed frame anchored behind the dialogue top edge so transitions & dialogue height never shift or float the sprite) */}
             <div
               className={`absolute inset-x-0 top-2 sm:top-3 z-10 pointer-events-none overflow-hidden ${
                 isSplitStage && isPortraitOrCompact
-                  ? 'bottom-[110px]'
-                  : !isSplitStage && isShortLandscape
-                    ? 'bottom-[155px]'
-                    : 'bottom-[190px] sm:bottom-[210px] xl:bottom-[225px]'
+                  ? 'bottom-[78px]'
+                  : 'bottom-[176px] sm:bottom-[188px] xl:bottom-[198px]'
               }`}
             >
               {activeImgFailed ? (
@@ -2926,7 +2966,11 @@ export const KanbanView: React.FC = () => {
                 </div>
               ) : (
                 npcConfig.displayMode === 'sprite' && (
-                  <div className="w-full h-full pt-6 sm:pt-4">
+                  <div
+                    className={`w-full h-full ${
+                      isSplitStage && isPortraitOrCompact ? 'pt-3 sm:pt-3' : 'pt-6 sm:pt-4'
+                    }`}
+                  >
                     <div className="relative w-full h-full">
                       {uniqueExpressionRawUrls.map((rawSrc) => {
                         const resolvedSrc = resolvedExpressionSrcMap.get(rawSrc) || rawSrc;
@@ -3183,7 +3227,7 @@ export const KanbanView: React.FC = () => {
                     : 'mx-3 mb-3 sm:mx-4 sm:mb-4 p-3.5 sm:p-4'
                 }`}
               >
-                <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="flex items-baseline gap-1.5 min-w-0">
                     <span className="text-sm sm:text-base font-extrabold text-amber-200 tracking-wide shrink-0">
                       {npcConfig.name}
@@ -3217,7 +3261,7 @@ export const KanbanView: React.FC = () => {
                   className={`grid text-amber-50 font-medium cursor-pointer ${
                     isPortraitOrCompact
                       ? 'text-xs sm:text-sm leading-snug min-h-[2rem]'
-                      : 'text-sm sm:text-base xl:text-lg leading-relaxed min-h-[2.8rem]'
+                      : 'text-sm sm:text-base xl:text-lg leading-relaxed min-h-[3.75rem]'
                   }`}
                 >
                   <span
@@ -3236,14 +3280,18 @@ export const KanbanView: React.FC = () => {
 
                 {/* Quick Affair Switcher Bar */}
                 <div
-                  className={`border-t border-amber-500/25 flex flex-wrap gap-1.5 ${
-                    isPortraitOrCompact ? 'pt-1.5 mt-1.5' : 'pt-2.5 mt-2.5'
+                  className={`border-t border-amber-500/25 ${
+                    isPortraitOrCompact
+                      ? 'pt-1.5 mt-1.5 flex flex-wrap gap-1.5'
+                      : 'pt-2.5 mt-2.5 grid grid-cols-3 gap-1.5'
                   }`}
                 >
                     <button
                       type="button"
                       onClick={startCheckInFlow}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      className={`rounded-lg text-xs font-bold border transition-colors cursor-pointer truncate ${
+                        isPortraitOrCompact ? 'px-2.5 py-1' : 'px-2 py-1.5 text-center'
+                      } ${
                         activeOverlay === 'none' &&
                         (dialogueMode === 'select_checkin_task' || dialogueMode === 'checkin_form')
                           ? 'bg-amber-500 text-amber-950 border-amber-300'
@@ -3255,7 +3303,9 @@ export const KanbanView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => startCreateTask('in_progress')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      className={`rounded-lg text-xs font-bold border transition-colors cursor-pointer truncate ${
+                        isPortraitOrCompact ? 'px-2.5 py-1' : 'px-2 py-1.5 text-center'
+                      } ${
                         activeOverlay === 'none' && dialogueMode === 'create_task'
                           ? 'bg-amber-500 text-amber-950 border-amber-300'
                           : 'bg-[#2a2019] hover:bg-[#382b22] text-amber-100 border-amber-500/35'
@@ -3266,7 +3316,9 @@ export const KanbanView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => switchSection('ledger')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      className={`rounded-lg text-xs font-bold border transition-colors cursor-pointer truncate ${
+                        isPortraitOrCompact ? 'px-2.5 py-1' : 'px-2 py-1.5 text-center'
+                      } ${
                         activeOverlay === 'ledger'
                           ? 'bg-amber-500 text-amber-950 border-amber-300'
                           : 'bg-[#2a2019] hover:bg-[#382b22] text-amber-100 border-amber-500/35'
@@ -3277,18 +3329,22 @@ export const KanbanView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => triggerRandomPick()}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      className={`rounded-lg text-xs font-bold border transition-colors cursor-pointer truncate ${
+                        isPortraitOrCompact ? 'px-2.5 py-1' : 'px-2 py-1.5 text-center'
+                      } ${
                         activeOverlay === 'none' && dialogueMode === 'random_pick'
                           ? 'bg-amber-500 text-amber-950 border-amber-300'
                           : 'bg-[#2a2019] hover:bg-[#382b22] text-amber-100 border-amber-500/35'
                       }`}
                     >
-                      🎲 抽坑
+                      🎲 帮我抽坑
                     </button>
                     <button
                       type="button"
                       onClick={startStaleReview}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      className={`rounded-lg text-xs font-bold border transition-colors cursor-pointer truncate ${
+                        isPortraitOrCompact ? 'px-2.5 py-1' : 'px-2 py-1.5 text-center'
+                      } ${
                         activeOverlay === 'none' && dialogueMode === 'stale_review'
                           ? 'bg-amber-500 text-amber-950 border-amber-300'
                           : 'bg-[#2a2019] hover:bg-[#382b22] text-amber-100 border-amber-500/35'
@@ -3296,6 +3352,27 @@ export const KanbanView: React.FC = () => {
                     >
                       🔔 催更{staleList.length > 0 ? `(${staleList.length})` : ''}
                     </button>
+                    {!isPortraitOrCompact && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveOverlay('none');
+                          setViewMode('kanban');
+                          setDialogueMode('sync_menu');
+                          speak(
+                            `需要同步云端卷宗还是备份到本地文件夹呢？可以在右侧同步中心直接操作~`,
+                            'thinking'
+                          );
+                        }}
+                        className={`px-2 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer truncate text-center ${
+                          activeOverlay === 'none' && dialogueMode === 'sync_menu'
+                            ? 'bg-amber-500 text-amber-950 border-amber-300'
+                            : 'bg-[#2a2019] hover:bg-[#382b22] text-amber-100 border-amber-500/35'
+                        }`}
+                      >
+                        ☁️ 同步备份
+                      </button>
+                    )}
                 </div>
               </div>
             )}
