@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TaskItem, DailyLog } from '../types';
-import { buildSyncPayload, DriveSyncPayload } from '../services/googleDrive';
+import { buildSyncPayload, DriveSyncPayload } from '../services/githubGist';
 import {
   DirHandle,
   LOCAL_DATA_FILENAME,

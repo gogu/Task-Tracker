@@ -17,17 +17,20 @@ import {
   addMinutesToTimeHHMM,
 } from '../utils/timeDistribution';
 import {
-  GIST_DATA_FILENAME,
   GistUser,
   GistFileInfo,
+  GistErrorCode,
+  GistSyncError,
   DriveSyncPayload,
   buildSyncPayload,
+  formatCompactJsonPayload,
   computeContentHash,
   verifyGistToken,
   getGistById,
   findExistingTrackerGist,
   createTrackerGist,
   updateTrackerGist,
+  clearRemoteGistCache,
   mergeSyncPayloads,
 } from '../services/githubGist';
 import { useLocalSync, LocalSyncInfo, ChoiceResult } from '../hooks/useLocalSync';
@@ -90,10 +93,6 @@ interface TaskContextType {
   openTaskModal: (task?: TaskItem, defaultStatus?: TaskStatus) => void;
   closeTaskModal: () => void;
 
-  logModalData: { isOpen: boolean; task?: TaskItem; date?: string; log?: DailyLog };
-  openLogModal: (task: TaskItem, date: string, log?: DailyLog) => void;
-  closeLogModal: () => void;
-
   taskDetailTaskId: string | null;
   openTaskDetail: (taskId: string) => void;
   closeTaskDetail: () => void;
@@ -111,7 +110,7 @@ interface TaskContextType {
   undo: () => void;
   redo: () => void;
 
-  // Gantt group order (synced to Drive)
+  // Gantt group order (synced to Gist)
   ganttGroupOrder: string[];
   setGanttGroupOrder: (order: string[]) => void;
 
@@ -125,6 +124,7 @@ interface TaskContextType {
   // GitHub Gist Cloud Sync Integration
   user: GistUser | null;
   gistToken: string | null;
+  gistPassphrase: string | null;
   gistHtmlUrl: string | null;
   autoSyncEnabled: boolean;
   setAutoSyncEnabled: (enabled: boolean) => void;
@@ -135,10 +135,16 @@ interface TaskContextType {
   syncStatus: 'idle' | 'syncing' | 'success' | 'error' | 'conflict';
   hasUnsyncedDriveChanges: boolean;
   syncErrorMessage: string | null;
+  syncErrorCode: GistErrorCode | null;
   driveFileId: string | null;
   driveSyncModalOpen: boolean;
   setDriveSyncModalOpen: (open: boolean) => void;
-  connectWithGistToken: (token: string, customGistId?: string) => Promise<boolean>;
+  connectWithGistToken: (
+    token: string,
+    customGistId?: string,
+    passphrase?: string
+  ) => Promise<boolean>;
+  updateEncryptionPassphrase: (nextPassphrase: string) => Promise<boolean>;
   logoutFromGist: () => Promise<void>;
   syncWithGist: (options?: { silent?: boolean }) => Promise<boolean>;
   pushToDrive: (skipConfirm?: boolean) => Promise<boolean>;
@@ -190,6 +196,7 @@ export interface ConfirmDialogState extends ConfirmDialogOptions {
 
 const STORAGE_KEY = 'media_task_tracker_data_v1';
 const GIST_TOKEN_KEY = 'media_tracker_gist_token_v1';
+const GIST_PASSPHRASE_KEY = 'media_tracker_gist_passphrase_v1';
 const GIST_ID_KEY = 'media_tracker_gist_id_v1';
 const GIST_HTML_URL_KEY = 'media_tracker_gist_html_url_v1';
 const GIST_USER_KEY = 'media_tracker_gist_user_v1';
@@ -365,13 +372,6 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     defaultStatus?: TaskStatus;
   }>({ isOpen: false });
 
-  const [logModalData, setLogModalData] = useState<{
-    isOpen: boolean;
-    task?: TaskItem;
-    date?: string;
-    log?: DailyLog;
-  }>({ isOpen: false });
-
   const [taskDetailTaskId, setTaskDetailTaskId] = useState<string | null>(null);
   const [pendingRestPrompt, setPendingRestPrompt] = useState<PendingRestPrompt | null>(null);
 
@@ -379,6 +379,13 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [gistToken, setGistToken] = useState<string | null>(() => {
     try {
       return localStorage.getItem(GIST_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [gistPassphrase, setGistPassphrase] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(GIST_PASSPHRASE_KEY);
     } catch {
       return null;
     }
@@ -402,6 +409,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error' | 'conflict'>('idle');
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const [syncErrorCode, setSyncErrorCode] = useState<GistErrorCode | null>(null);
   const [pendingConflictCount, setPendingConflictCount] = useState<number>(0);
   const [driveFileId, setDriveFileId] = useState<string | null>(() => localStorage.getItem(GIST_ID_KEY));
   const [gistHtmlUrl, setGistHtmlUrl] = useState<string | null>(() => localStorage.getItem(GIST_HTML_URL_KEY));
@@ -412,8 +420,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const gistTokenRef = useRef<string | null>(gistToken);
   gistTokenRef.current = gistToken;
+  const gistPassphraseRef = useRef<string | null>(gistPassphrase);
+  gistPassphraseRef.current = gistPassphrase;
   const gistIdRef = useRef<string | null>(driveFileId);
   gistIdRef.current = driveFileId;
+  const syncErrorCodeRef = useRef<GistErrorCode | null>(syncErrorCode);
+  syncErrorCodeRef.current = syncErrorCode;
   const isSyncingRef = useRef<boolean>(false);
   const conflictModalActiveRef = useRef<boolean>(false);
   const lastAutoCheckAtRef = useRef<number>(0);
@@ -1542,6 +1554,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       dismissedConflictKeyRef.current = null;
       setPendingConflictCount(0);
       setSyncErrorMessage(null);
+      setSyncErrorCode(null);
       setSyncStatus('success');
     },
     []
@@ -1561,12 +1574,19 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       silent?: boolean;
       overrideToken?: string;
       overrideGistId?: string | null;
+      overridePassphrase?: string;
     }): Promise<boolean> => {
       const silent = options?.silent ?? false;
       const token = (options?.overrideToken ?? gistTokenRef.current)?.trim() || '';
+      const passphrase =
+        options?.overridePassphrase !== undefined
+          ? options.overridePassphrase.trim()
+          : gistPassphraseRef.current?.trim() || '';
+
       if (!token) {
         if (!silent) {
           setSyncErrorMessage('尚未配置 GitHub Token，请先连接 GitHub Gist');
+          setSyncErrorCode('API_ERROR');
           setSyncStatus('error');
         }
         return false;
@@ -1583,6 +1603,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setSyncStatus('syncing');
       }
       setSyncErrorMessage(null);
+      setSyncErrorCode(null);
 
       try {
         const explicitGistId =
@@ -1591,28 +1612,28 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         let remoteGist: GistFileInfo | null = null;
         if (explicitGistId) {
           try {
-            remoteGist = await getGistById(token, explicitGistId);
+            remoteGist = await getGistById(token, explicitGistId, passphrase);
           } catch (err: any) {
             if (options?.overrideGistId) {
               throw err;
             }
             // If cached gistId was deleted remotely (404), try searching all gists
             if (String(err?.message || '').includes('404')) {
-              remoteGist = await findExistingTrackerGist(token);
+              remoteGist = await findExistingTrackerGist(token, passphrase);
             } else {
               throw err;
             }
           }
         } else {
-          remoteGist = await findExistingTrackerGist(token);
+          remoteGist = await findExistingTrackerGist(token, passphrase);
         }
 
         // Case A: Cloud file does not exist yet -> create or update gist with current local data
         if (!remoteGist || !remoteGist.payload) {
           const currentPayload = buildSyncPayload(latestStateRef.current);
           const created = remoteGist
-            ? await updateTrackerGist(token, remoteGist.id, currentPayload)
-            : await createTrackerGist(token, currentPayload);
+            ? await updateTrackerGist(token, remoteGist.id, currentPayload, passphrase)
+            : await createTrackerGist(token, currentPayload, passphrase);
           persistSyncSuccessState(created, currentPayload);
           showToast(
             silent ? '已自动初始化 GitHub Gist 云端存档' : '已在 GitHub Gist 创建并上传云端存档',
@@ -1627,15 +1648,31 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const analysis = mergeSyncPayloads(baseSnapshot, localPayloadNow, cloudPayload);
 
         if (analysis.status === 'identical') {
-          persistSyncSuccessState(remoteGist, localPayloadNow);
-          if (!silent) {
-            showToast('本地与 GitHub Gist 数据已是最新', 'success');
+          if (remoteGist.needsShardMigration || remoteGist.needsEncryptionMigration) {
+            const migrated = await updateTrackerGist(
+              token,
+              remoteGist.id,
+              localPayloadNow,
+              passphrase
+            );
+            persistSyncSuccessState(migrated, localPayloadNow);
+            showToast(
+              remoteGist.needsEncryptionMigration
+                ? '已将云端存档加密并完成同步'
+                : '已将云端存档平滑升级为按月分片格式',
+              'success'
+            );
+          } else {
+            persistSyncSuccessState(remoteGist, localPayloadNow);
+            if (!silent) {
+              showToast('本地与 GitHub Gist 数据已是最新', 'success');
+            }
           }
           return true;
         }
 
         if (analysis.status === 'local-ahead') {
-          const updated = await updateTrackerGist(token, remoteGist.id, localPayloadNow);
+          const updated = await updateTrackerGist(token, remoteGist.id, localPayloadNow, passphrase);
           persistSyncSuccessState(updated, localPayloadNow);
           if (!silent) {
             showToast('已同步本地修改至 GitHub Gist', 'success');
@@ -1645,7 +1682,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         if (analysis.status === 'cloud-ahead') {
           pushHistory('从 GitHub Gist 自动同步云端更新');
-          persistSyncSuccessState(remoteGist, cloudPayload);
+          if (remoteGist.needsShardMigration || remoteGist.needsEncryptionMigration) {
+            const migrated = await updateTrackerGist(token, remoteGist.id, cloudPayload, passphrase);
+            persistSyncSuccessState(migrated, cloudPayload);
+          } else {
+            persistSyncSuccessState(remoteGist, cloudPayload);
+          }
           applyGistPayloadToState(cloudPayload);
           showToast('已从 GitHub Gist 同步最新云端数据', 'success');
           return true;
@@ -1653,7 +1695,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         if (analysis.status === 'auto-merged') {
           pushHistory('自动合并本地与 GitHub Gist 云端数据');
-          const updated = await updateTrackerGist(token, remoteGist.id, analysis.mergedPayload);
+          const updated = await updateTrackerGist(
+            token,
+            remoteGist.id,
+            analysis.mergedPayload,
+            passphrase
+          );
           persistSyncSuccessState(updated, analysis.mergedPayload);
           applyGistPayloadToState(analysis.mergedPayload);
           showToast('已自动合并云端与本地变更并完成同步', 'success');
@@ -1712,7 +1759,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         if (choice === 'confirm') {
           pushHistory('智能合并云端与本地冲突数据');
-          const updated = await updateTrackerGist(token, remoteGist.id, latestAnalysis.mergedPayload);
+          const updated = await updateTrackerGist(
+            token,
+            remoteGist.id,
+            latestAnalysis.mergedPayload,
+            passphrase
+          );
           persistSyncSuccessState(updated, latestAnalysis.mergedPayload);
           applyGistPayloadToState(latestAnalysis.mergedPayload);
           showToast('已完成智能合并并同步至 GitHub Gist', 'success');
@@ -1721,14 +1773,19 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         if (choice === 'alt') {
           pushHistory('以 GitHub Gist 云端数据覆盖本地');
-          persistSyncSuccessState(remoteGist, cloudPayload);
+          if (remoteGist.needsShardMigration || remoteGist.needsEncryptionMigration) {
+            const migrated = await updateTrackerGist(token, remoteGist.id, cloudPayload, passphrase);
+            persistSyncSuccessState(migrated, cloudPayload);
+          } else {
+            persistSyncSuccessState(remoteGist, cloudPayload);
+          }
           applyGistPayloadToState(cloudPayload);
           showToast('已使用云端数据覆盖本地', 'info');
           return true;
         }
 
         if (choice === 'secondary_alt') {
-          const updated = await updateTrackerGist(token, remoteGist.id, latestLocal);
+          const updated = await updateTrackerGist(token, remoteGist.id, latestLocal, passphrase);
           persistSyncSuccessState(updated, latestLocal);
           showToast('已使用本地数据覆盖 GitHub Gist 云端', 'success');
           return true;
@@ -1739,6 +1796,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return false;
       } catch (err: any) {
         console.error('GitHub Gist sync error:', err);
+        const errCode: GistErrorCode = err instanceof GistSyncError ? err.code : 'API_ERROR';
+        setSyncErrorCode(errCode);
         setSyncErrorMessage(err?.message || 'GitHub Gist 同步失败');
         setSyncStatus('error');
         if (!silent) {
@@ -1764,8 +1823,10 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const pushToDrive = useCallback(
     async (skipConfirm: boolean = false): Promise<boolean> => {
       const token = gistTokenRef.current?.trim();
+      const passphrase = gistPassphraseRef.current?.trim() || '';
       if (!token) {
         setSyncErrorMessage('尚未配置 GitHub Token，请先连接 GitHub Gist');
+        setSyncErrorCode('API_ERROR');
         setSyncStatus('error');
         return false;
       }
@@ -1775,7 +1836,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!skipConfirm) {
         const confirmed = await requestConfirm({
           title: '上传并覆盖 GitHub Gist 云端数据',
-          message: `确定要用当前本地数据强行覆盖 GitHub Gist 中的「${GIST_DATA_FILENAME}」吗？\n当前本地包含：${snapshot.tasks.length} 项任务、${snapshot.logs.length} 条打卡日志。\n云端当前内容将被本地完整替换。`,
+          message: `确定要用当前本地数据强行覆盖 GitHub Gist 云端分片存档吗？\n当前本地包含：${snapshot.tasks.length} 项任务、${snapshot.logs.length} 条打卡日志。\n云端当前内容将被本地完整替换。`,
           confirmText: '确认上传覆盖',
           cancelText: '取消',
           variant: 'primary',
@@ -1788,18 +1849,20 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsSyncing(true);
       setSyncStatus('syncing');
       setSyncErrorMessage(null);
+      setSyncErrorCode(null);
 
       try {
         let gistId = gistIdRef.current;
         let gistInfo: GistFileInfo;
         if (gistId) {
-          gistInfo = await updateTrackerGist(token, gistId, snapshot);
+          gistInfo = await updateTrackerGist(token, gistId, snapshot, passphrase);
         } else {
-          const found = await findExistingTrackerGist(token);
+          // Search existing gist without requiring decryption if we're explicitly overwriting
+          const found = await findExistingTrackerGist(token, passphrase).catch(() => null);
           if (found) {
-            gistInfo = await updateTrackerGist(token, found.id, snapshot);
+            gistInfo = await updateTrackerGist(token, found.id, snapshot, passphrase);
           } else {
-            gistInfo = await createTrackerGist(token, snapshot);
+            gistInfo = await createTrackerGist(token, snapshot, passphrase);
           }
         }
 
@@ -1808,6 +1871,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return true;
       } catch (err: any) {
         console.error('Push to GitHub Gist error:', err);
+        setSyncErrorCode(err instanceof GistSyncError ? err.code : 'API_ERROR');
         setSyncErrorMessage(err?.message || '上传同步到 GitHub Gist 失败');
         setSyncStatus('error');
         return false;
@@ -1823,8 +1887,10 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const pullFromDrive = useCallback(
     async (skipConfirm: boolean = false): Promise<boolean> => {
       const token = gistTokenRef.current?.trim();
+      const passphrase = gistPassphraseRef.current?.trim() || '';
       if (!token) {
         setSyncErrorMessage('尚未配置 GitHub Token，请先连接 GitHub Gist');
+        setSyncErrorCode('API_ERROR');
         setSyncStatus('error');
         return false;
       }
@@ -1832,7 +1898,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!skipConfirm) {
         const confirmed = await requestConfirm({
           title: '从 GitHub Gist 拉取并覆盖本地',
-          message: `确定要从 GitHub Gist 拉取「${GIST_DATA_FILENAME}」并强行覆盖当前本地数据吗？\n拉取后，本地尚未上传的修改将被云端完整覆盖（可通过 Ctrl+Z 撤销）。`,
+          message: `确定要从 GitHub Gist 云端存档拉取数据并强行覆盖当前本地数据吗？\n拉取后，本地尚未上传的修改将被云端完整覆盖（可通过 Ctrl+Z 撤销）。`,
           confirmText: '确认拉取覆盖',
           cancelText: '取消',
           variant: 'danger',
@@ -1845,13 +1911,14 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsSyncing(true);
       setSyncStatus('syncing');
       setSyncErrorMessage(null);
+      setSyncErrorCode(null);
 
       try {
         let gistInfo: GistFileInfo | null = null;
         if (gistIdRef.current) {
-          gistInfo = await getGistById(token, gistIdRef.current);
+          gistInfo = await getGistById(token, gistIdRef.current, passphrase);
         } else {
-          gistInfo = await findExistingTrackerGist(token);
+          gistInfo = await findExistingTrackerGist(token, passphrase);
         }
 
         if (!gistInfo || !gistInfo.payload) {
@@ -1865,6 +1932,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return true;
       } catch (err: any) {
         console.error('Pull from GitHub Gist error:', err);
+        setSyncErrorCode(err instanceof GistSyncError ? err.code : 'API_ERROR');
         setSyncErrorMessage(err?.message || '从 GitHub Gist 拉取数据失败');
         setSyncStatus('error');
         return false;
@@ -1877,18 +1945,29 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   );
 
   const connectWithGistToken = useCallback(
-    async (tokenInput: string, customGistId?: string): Promise<boolean> => {
+    async (tokenInput: string, customGistId?: string, passphraseInput?: string): Promise<boolean> => {
       const trimmedToken = tokenInput.trim();
       const trimmedGistId = customGistId?.trim() || null;
+      const trimmedPassphrase = passphraseInput?.trim() || '';
 
       setIsLoggingIn(true);
       setSyncErrorMessage(null);
+      setSyncErrorCode(null);
       try {
         const profile = await verifyGistToken(trimmedToken);
 
+        clearRemoteGistCache();
         gistTokenRef.current = trimmedToken;
         setGistToken(trimmedToken);
         localStorage.setItem(GIST_TOKEN_KEY, trimmedToken);
+
+        gistPassphraseRef.current = trimmedPassphrase || null;
+        setGistPassphrase(trimmedPassphrase || null);
+        if (trimmedPassphrase) {
+          localStorage.setItem(GIST_PASSPHRASE_KEY, trimmedPassphrase);
+        } else {
+          localStorage.removeItem(GIST_PASSPHRASE_KEY);
+        }
 
         setUser(profile);
         localStorage.setItem(GIST_USER_KEY, JSON.stringify(profile));
@@ -1915,10 +1994,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           silent: false,
           overrideToken: trimmedToken,
           overrideGistId: trimmedGistId,
+          overridePassphrase: trimmedPassphrase,
         });
         return true;
       } catch (err: any) {
         console.error('Connect GitHub Gist failed:', err);
+        setSyncErrorCode(err instanceof GistSyncError ? err.code : 'API_ERROR');
         setSyncErrorMessage(err?.message || '连接 GitHub Gist 失败');
         setSyncStatus('error');
         return false;
@@ -1929,12 +2010,173 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [showToast, syncWithGist]
   );
 
+  const updateEncryptionPassphrase = useCallback(
+    async (nextPassphraseInput: string): Promise<boolean> => {
+      const nextPassphrase = nextPassphraseInput.trim();
+      const prevPassphrase = gistPassphraseRef.current?.trim() || '';
+      const token = gistTokenRef.current?.trim();
+
+      if (!token) {
+        gistPassphraseRef.current = nextPassphrase || null;
+        setGistPassphrase(nextPassphrase || null);
+        try {
+          if (nextPassphrase) localStorage.setItem(GIST_PASSPHRASE_KEY, nextPassphrase);
+          else localStorage.removeItem(GIST_PASSPHRASE_KEY);
+        } catch {
+          // ignore
+        }
+        return true;
+      }
+
+      if (isSyncingRef.current || conflictModalActiveRef.current) {
+        showToast('当前正在同步或有未处理的冲突，请稍后再试', 'info');
+        return false;
+      }
+
+      // When changing or disabling an active passphrase on an existing Gist,
+      // merge with prevPassphrase first so cloud changes are preserved before re-encrypting/decrypting.
+      if (prevPassphrase && prevPassphrase !== nextPassphrase && gistIdRef.current) {
+        isSyncingRef.current = true;
+        setIsSyncing(true);
+        setSyncStatus('syncing');
+        setSyncErrorMessage(null);
+        setSyncErrorCode(null);
+        let shouldRunConflictResolution = false;
+
+        try {
+          const remotePrev = await getGistById(token, gistIdRef.current, prevPassphrase);
+          if (remotePrev.payload) {
+            const base = loadBaseSnapshot();
+            const localNow = buildSyncPayload(latestStateRef.current);
+            const mergeRes = mergeSyncPayloads(base, localNow, remotePrev.payload);
+            if (mergeRes.status === 'conflict') {
+              shouldRunConflictResolution = true;
+            } else {
+              const targetPayload =
+                mergeRes.status === 'cloud-ahead'
+                  ? remotePrev.payload
+                  : mergeRes.status === 'local-ahead' || mergeRes.status === 'identical'
+                    ? localNow
+                    : mergeRes.mergedPayload;
+              if (mergeRes.status === 'cloud-ahead' || mergeRes.status === 'auto-merged') {
+                pushHistory('切换加密配置前合并云端数据');
+                applyGistPayloadToState(targetPayload);
+              }
+              const rewritten = await updateTrackerGist(
+                token,
+                remotePrev.id,
+                targetPayload,
+                nextPassphrase
+              );
+              gistPassphraseRef.current = nextPassphrase || null;
+              setGistPassphrase(nextPassphrase || null);
+              if (nextPassphrase) localStorage.setItem(GIST_PASSPHRASE_KEY, nextPassphrase);
+              else localStorage.removeItem(GIST_PASSPHRASE_KEY);
+              persistSyncSuccessState(rewritten, targetPayload);
+              showToast(
+                nextPassphrase
+                  ? '已更新同步加密口令并重新加密云端存档'
+                  : '已关闭端到端加密，云端已切换为明文存档',
+                'success'
+              );
+              return true;
+            }
+          }
+        } catch (err: any) {
+          if (!(err instanceof GistSyncError && err.code === 'E2EE_WRONG_PASSPHRASE')) {
+            setSyncErrorCode(err instanceof GistSyncError ? err.code : 'API_ERROR');
+            setSyncErrorMessage(err?.message || '更新加密设置失败');
+            setSyncStatus('error');
+            showToast(err?.message || '更新加密设置失败', 'error');
+            return false;
+          }
+          // prevPassphrase could not decrypt cloud -> fall through to try nextPassphrase directly
+        } finally {
+          isSyncingRef.current = false;
+          setIsSyncing(false);
+        }
+
+        if (shouldRunConflictResolution) {
+          const resolved = await syncWithGist({ silent: false, overridePassphrase: prevPassphrase });
+          if (!resolved || !gistIdRef.current) return false;
+          const latestNow = buildSyncPayload(latestStateRef.current);
+          isSyncingRef.current = true;
+          setIsSyncing(true);
+          try {
+            const rewritten = await updateTrackerGist(
+              token,
+              gistIdRef.current,
+              latestNow,
+              nextPassphrase
+            );
+            gistPassphraseRef.current = nextPassphrase || null;
+            setGistPassphrase(nextPassphrase || null);
+            if (nextPassphrase) localStorage.setItem(GIST_PASSPHRASE_KEY, nextPassphrase);
+            else localStorage.removeItem(GIST_PASSPHRASE_KEY);
+            persistSyncSuccessState(rewritten, latestNow);
+            showToast(
+              nextPassphrase
+                ? '已更新同步加密口令并重新加密云端存档'
+                : '已关闭端到端加密，云端已切换为明文存档',
+              'success'
+            );
+            return true;
+          } catch (err: any) {
+            setSyncErrorCode(err instanceof GistSyncError ? err.code : 'API_ERROR');
+            setSyncErrorMessage(err?.message || '重写云端加密存档失败');
+            setSyncStatus('error');
+            return false;
+          } finally {
+            isSyncingRef.current = false;
+            setIsSyncing(false);
+          }
+        }
+      }
+
+      const backupPrev = gistPassphraseRef.current;
+      gistPassphraseRef.current = nextPassphrase || null;
+      setGistPassphrase(nextPassphrase || null);
+      try {
+        if (nextPassphrase) localStorage.setItem(GIST_PASSPHRASE_KEY, nextPassphrase);
+        else localStorage.removeItem(GIST_PASSPHRASE_KEY);
+      } catch {
+        // ignore
+      }
+
+      const ok = await syncWithGist({
+        silent: false,
+        overridePassphrase: nextPassphrase,
+      });
+      if (!ok && !nextPassphrase && backupPrev) {
+        gistPassphraseRef.current = backupPrev;
+        setGistPassphrase(backupPrev);
+        try {
+          localStorage.setItem(GIST_PASSPHRASE_KEY, backupPrev);
+        } catch {
+          // ignore
+        }
+      }
+      return ok;
+    },
+    [
+      loadBaseSnapshot,
+      pushHistory,
+      applyGistPayloadToState,
+      persistSyncSuccessState,
+      syncWithGist,
+      showToast,
+    ]
+  );
+
   const logoutFromGist = useCallback(async () => {
+    clearRemoteGistCache();
     gistTokenRef.current = null;
+    gistPassphraseRef.current = null;
     gistIdRef.current = null;
     dismissedConflictKeyRef.current = null;
 
     localStorage.removeItem(GIST_TOKEN_KEY);
+    localStorage.removeItem(GIST_PASSPHRASE_KEY);
     localStorage.removeItem(GIST_ID_KEY);
     localStorage.removeItem(GIST_HTML_URL_KEY);
     localStorage.removeItem(GIST_USER_KEY);
@@ -1943,6 +2185,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.removeItem(GIST_BASE_SNAPSHOT_KEY);
 
     setGistToken(null);
+    setGistPassphrase(null);
     setUser(null);
     setDriveFileId(null);
     setGistHtmlUrl(null);
@@ -1951,6 +2194,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setPendingConflictCount(0);
     setSyncStatus('idle');
     setSyncErrorMessage(null);
+    setSyncErrorCode(null);
     showToast('已断开 GitHub Gist 云端同步', 'info');
   }, [showToast]);
 
@@ -1968,6 +2212,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const handleResumeCheck = () => {
       if (document.visibilityState === 'hidden') return;
       if (isSyncingRef.current || conflictModalActiveRef.current) return;
+      if (
+        syncErrorCodeRef.current === 'E2EE_PASSPHRASE_REQUIRED' ||
+        syncErrorCodeRef.current === 'E2EE_WRONG_PASSPHRASE'
+      ) {
+        return;
+      }
       if (Date.now() - lastAutoCheckAtRef.current < 15_000) return;
       void syncWithGist({ silent: true });
     };
@@ -1985,6 +2235,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!gistToken || !autoSyncEnabled || !hasUnsyncedDriveChanges) return;
     const timer = window.setTimeout(() => {
       if (isSyncingRef.current || conflictModalActiveRef.current) return;
+      if (
+        syncErrorCodeRef.current === 'E2EE_PASSPHRASE_REQUIRED' ||
+        syncErrorCodeRef.current === 'E2EE_WRONG_PASSPHRASE'
+      ) {
+        return;
+      }
       void syncWithGist({ silent: true });
     }, 3000);
     return () => window.clearTimeout(timer);
@@ -2007,14 +2263,6 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const closeTaskModal = () => {
     setTaskModalData({ isOpen: false });
-  };
-
-  const openLogModal = (task: TaskItem, date: string, log?: DailyLog) => {
-    setLogModalData({ isOpen: true, task, date, log });
-  };
-
-  const closeLogModal = () => {
-    setLogModalData({ isOpen: false });
   };
 
   const openTaskDetail = (taskId: string) => {
@@ -2046,7 +2294,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const exportData = () => {
     const payload = buildSyncPayload({ tasks, logs, ganttGroupOrder });
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload, null, 2));
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(formatCompactJsonPayload(payload));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
     downloadAnchor.setAttribute('download', `media-tracker-backup-${getTodayString()}.json`);
@@ -2109,9 +2357,6 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         taskModalData,
         openTaskModal,
         closeTaskModal,
-        logModalData,
-        openLogModal,
-        closeLogModal,
         taskDetailTaskId,
         openTaskDetail,
         closeTaskDetail,
@@ -2133,6 +2378,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         hideToast,
         user,
         gistToken,
+        gistPassphrase,
         gistHtmlUrl,
         autoSyncEnabled,
         setAutoSyncEnabled,
@@ -2143,10 +2389,12 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         syncStatus,
         hasUnsyncedDriveChanges,
         syncErrorMessage,
+        syncErrorCode,
         driveFileId,
         driveSyncModalOpen,
         setDriveSyncModalOpen,
         connectWithGistToken,
+        updateEncryptionPassphrase,
         logoutFromGist,
         syncWithGist,
         pushToDrive,

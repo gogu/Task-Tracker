@@ -1,4 +1,4 @@
-import type { DriveSyncPayload } from './googleDrive';
+import { formatCompactJsonPayload, type DriveSyncPayload } from './githubGist';
 
 /**
  * Local folder access via the File System Access API (Chromium only).
@@ -140,6 +140,6 @@ export async function writeDataFile(
       await writeTextFile(handle, LOCAL_BACKUP_FILENAME, old);
     }
   }
-  await writeTextFile(handle, LOCAL_DATA_FILENAME, JSON.stringify(payload, null, 2));
+  await writeTextFile(handle, LOCAL_DATA_FILENAME, formatCompactJsonPayload(payload));
 }
 

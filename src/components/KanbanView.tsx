@@ -3215,7 +3215,7 @@ export const KanbanView: React.FC = () => {
                             同步与备份
                           </div>
                           <div className="text-xs text-amber-200/75 mt-1 truncate">
-                            Google Drive / 本地目录 / JSON 备份
+                            GitHub Gist / 本地目录 / JSON 备份
                           </div>
                         </div>
                       </button>
@@ -5804,7 +5804,7 @@ export const KanbanView: React.FC = () => {
                               ? syncStatus === 'conflict'
                                 ? '检测到云端与本地冲突，点击处理并合并'
                                 : '已连接 GitHub Gist，支持自动合并同步'
-                              : '配置 GitHub Token 实现 PC 与 iPad 自动同步'}
+                              : '配置 GitHub Token 实现多设备自动同步'}
                           </div>
                         </div>
                       </button>

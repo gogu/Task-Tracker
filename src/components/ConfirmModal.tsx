@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertTriangle, HelpCircle, X } from 'lucide-react';
+import { AlertTriangle, HelpCircle } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
 
 export const ConfirmModal: React.FC = () => {

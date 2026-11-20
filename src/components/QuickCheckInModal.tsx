@@ -9,8 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  Sparkles,
-  Info,
   Coffee,
   Plus,
 } from 'lucide-react';
@@ -18,7 +16,6 @@ import { useTaskContext } from '../context/TaskContext';
 import { ProgressType, PROGRESS_TYPE_CONFIG } from '../types';
 import {
   getTodayString,
-  getYesterdayString,
   addDays,
   getWeekdayChinese,
   diffInDays,
@@ -56,7 +53,6 @@ export const QuickCheckInModal: React.FC = () => {
   const lastModalInitKeyRef = useRef<string>('');
 
   const todayStr = getTodayString();
-  const yesterdayStr = getYesterdayString();
 
   // Synchronize selectedDate when checkInModalDate or checkInModalTask changes
   useEffect(() => {

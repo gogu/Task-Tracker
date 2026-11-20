@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -19,9 +19,10 @@ import {
   Eye,
   EyeOff,
   GitMerge,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
-import { GIST_DATA_FILENAME } from '../services/githubGist';
 
 const TOKEN_CREATION_URL =
   'https://github.com/settings/tokens/new?scopes=gist&description=Task-Tracker-Sync';
@@ -30,6 +31,7 @@ export const DriveSyncModal: React.FC = () => {
   const {
     user,
     gistToken,
+    gistPassphrase,
     gistHtmlUrl,
     autoSyncEnabled,
     setAutoSyncEnabled,
@@ -40,10 +42,12 @@ export const DriveSyncModal: React.FC = () => {
     syncStatus,
     hasUnsyncedDriveChanges,
     syncErrorMessage,
+    syncErrorCode,
     driveFileId,
     driveSyncModalOpen,
     setDriveSyncModalOpen,
     connectWithGistToken,
+    updateEncryptionPassphrase,
     logoutFromGist,
     syncWithGist,
     pushToDrive,
@@ -55,25 +59,69 @@ export const DriveSyncModal: React.FC = () => {
 
   const [tokenInput, setTokenInput] = useState('');
   const [customGistIdInput, setCustomGistIdInput] = useState('');
+  const [connectPassphraseInput, setConnectPassphraseInput] = useState('');
   const [showTokenText, setShowTokenText] = useState(false);
+  const [showConnectPassphraseText, setShowConnectPassphraseText] = useState(false);
   const [showGuide, setShowGuide] = useState(true);
+
+  const [editingEncryption, setEditingEncryption] = useState(false);
+  const [passphraseDraft, setPassphraseDraft] = useState('');
+  const [showPassphraseDraft, setShowPassphraseDraft] = useState(false);
+
+  const isPassphraseError =
+    syncErrorCode === 'E2EE_PASSPHRASE_REQUIRED' || syncErrorCode === 'E2EE_WRONG_PASSPHRASE';
+
+  useEffect(() => {
+    if (driveSyncModalOpen) {
+      setPassphraseDraft(gistPassphrase ?? '');
+      setEditingEncryption(isPassphraseError);
+    }
+  }, [driveSyncModalOpen, gistPassphrase, isPassphraseError]);
 
   if (!driveSyncModalOpen) return null;
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tokenInput.trim()) return;
-    const ok = await connectWithGistToken(tokenInput, customGistIdInput);
+    const ok = await connectWithGistToken(tokenInput, customGistIdInput, connectPassphraseInput);
     if (ok) {
       setTokenInput('');
       setCustomGistIdInput('');
+      setConnectPassphraseInput('');
+    }
+  };
+
+  const handleApplyPassphrase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const ok = await updateEncryptionPassphrase(passphraseDraft);
+    if (ok) {
+      setEditingEncryption(false);
+    }
+  };
+
+  const handleDisableEncryption = async () => {
+    const ok = await requestConfirm({
+      title: '关闭端到端加密',
+      message:
+        '关闭后，云端 Gist 中的任务与打卡文件将转换为明文 JSON（仍然存放在 Secret Gist 中，但知道链接的人可直接查看）。\n\n确定要关闭端到端加密并转为明文同步吗？',
+      confirmText: '确认关闭加密',
+      cancelText: '取消',
+      variant: 'danger',
+    });
+    if (ok) {
+      const done = await updateEncryptionPassphrase('');
+      if (done) {
+        setPassphraseDraft('');
+        setEditingEncryption(false);
+      }
     }
   };
 
   const handleDisconnect = async () => {
     const ok = await requestConfirm({
       title: '断开 GitHub Gist 连接',
-      message: '确定要断开当前 GitHub Gist 同步吗？\n云端存档和当前本地任务数据都会保留，之后可以随时重新填写 Token 恢复同步。',
+      message:
+        '确定要断开当前 GitHub Gist 同步吗？\n云端存档和当前本地任务数据都会保留，之后可以随时重新填写 Token 恢复同步。',
       confirmText: '断开连接',
       cancelText: '取消',
       variant: 'primary',
@@ -85,6 +133,7 @@ export const DriveSyncModal: React.FC = () => {
 
   const resolvedGistUrl =
     gistHtmlUrl || (driveFileId ? `https://gist.github.com/${driveFileId}` : null);
+  const encryptionEnabled = Boolean(gistPassphrase && gistPassphrase.trim().length > 0);
 
   return (
     <AnimatePresence>
@@ -108,7 +157,7 @@ export const DriveSyncModal: React.FC = () => {
                   GitHub Gist 云端自动同步
                 </h3>
                 <p className="text-[11px] text-zinc-500">
-                  零后端跨域直连 · 凭证永久有效 · 支持 PC 与 iPad 自动合并同步
+                  零后端跨域直连 · 凭证永久有效 · 支持多设备自动合并同步
                 </p>
               </div>
             </div>
@@ -141,7 +190,7 @@ export const DriveSyncModal: React.FC = () => {
                     绑定 GitHub Token 开启自动同步
                   </h4>
                   <p className="text-xs text-zinc-500 leading-relaxed max-w-sm mx-auto">
-                    数据保存在您个人的私密 GitHub Gist 中。PC 与 iPad 填入同一个 Token 即可自动识别同一份存档，无需任何代理或后端。
+                    数据保存在您个人的私密 GitHub Gist 中。多设备填入同一个 Token 即可自动识别同一份存档，无需任何代理或后端。
                   </p>
                 </div>
 
@@ -183,6 +232,35 @@ export const DriveSyncModal: React.FC = () => {
                       className="w-full px-3.5 py-2 text-xs font-mono rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                   </div>
+
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">
+                      <Lock className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>端到端加密口令（选填，留空则不加密）</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConnectPassphraseText ? 'text' : 'password'}
+                        value={connectPassphraseInput}
+                        onChange={(e) => setConnectPassphraseInput(e.target.value)}
+                        placeholder="选填：填写后云端将以 AES-256-GCM 密文存储"
+                        autoComplete="off"
+                        className="w-full pl-3.5 pr-10 py-2 text-xs font-mono rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConnectPassphraseText((v) => !v)}
+                        title={showConnectPassphraseText ? '隐藏口令' : '显示口令'}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                      >
+                        {showConnectPassphraseText ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <button
@@ -214,7 +292,11 @@ export const DriveSyncModal: React.FC = () => {
                     <div className="mt-2.5 p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-700/60 text-[11px] text-zinc-600 dark:text-zinc-300 space-y-2 leading-relaxed">
                       <ol className="list-decimal pl-4 space-y-1.5">
                         <li>
-                          点击下方快捷链接前往 GitHub（已自动勾选仅限 <code className="px-1 py-0.5 bg-zinc-200/70 dark:bg-zinc-700 rounded">gist</code> 最小权限）：
+                          点击下方快捷链接前往 GitHub（已自动勾选仅限{' '}
+                          <code className="px-1 py-0.5 bg-zinc-200/70 dark:bg-zinc-700 rounded">
+                            gist
+                          </code>{' '}
+                          最小权限）：
                           <div className="mt-1">
                             <a
                               href={TOKEN_CREATION_URL}
@@ -228,10 +310,16 @@ export const DriveSyncModal: React.FC = () => {
                           </div>
                         </li>
                         <li>
-                          将 <strong>Expiration</strong> 设为 <strong>No expiration（永不过期）</strong>，拉到底部点击 <strong>Generate token</strong>。
+                          将 <strong>Expiration</strong> 设为{' '}
+                          <strong>No expiration（永不过期）</strong>，拉到底部点击{' '}
+                          <strong>Generate token</strong>。
                         </li>
                         <li>
-                          复制生成的 <code className="px-1 py-0.5 bg-zinc-200/70 dark:bg-zinc-700 rounded">ghp_...</code> 粘贴到上方输入框即可；在电脑和 iPad 上填入同一个 Token 会自动绑定同一个私密 Gist。
+                          复制生成的{' '}
+                          <code className="px-1 py-0.5 bg-zinc-200/70 dark:bg-zinc-700 rounded">
+                            ghp_...
+                          </code>{' '}
+                          粘贴到上方输入框即可；在电脑和 iPad 上填入同一个 Token 会自动绑定同一个私密 Gist（若开启加密，两端填入同一加密口令即可）。
                         </li>
                       </ol>
                     </div>
@@ -310,15 +398,138 @@ export const DriveSyncModal: React.FC = () => {
                   </button>
                 </div>
 
+                {/* Optional End-to-End Encryption Card */}
+                <div
+                  className={`p-3 rounded-xl border space-y-2.5 transition-colors ${
+                    isPassphraseError
+                      ? 'border-rose-300 dark:border-rose-800 bg-rose-50/50 dark:bg-rose-950/20'
+                      : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {encryptionEnabled ? (
+                        <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      ) : (
+                        <Unlock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                            端到端加密（可选）
+                          </span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded font-medium border ${
+                              encryptionEnabled
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                : 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700'
+                            }`}
+                          >
+                            {encryptionEnabled ? '已开启 AES-256' : '未开启（明文）'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
+                          {encryptionEnabled
+                            ? '云端仅保存加密密文，即使 Gist 链接泄露也无法查看内容'
+                            : '开启后将在上传前用本地口令加密分片，防止云端链接泄露'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {!editingEncryption && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPassphraseDraft(gistPassphrase ?? '');
+                          setEditingEncryption(true);
+                        }}
+                        className="shrink-0 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-[11px] font-medium text-zinc-700 dark:text-zinc-200 transition-colors cursor-pointer"
+                      >
+                        {encryptionEnabled ? '修改 / 关闭' : '开启加密'}
+                      </button>
+                    )}
+                  </div>
+
+                  {editingEncryption && (
+                    <form onSubmit={handleApplyPassphrase} className="space-y-2.5 pt-1 border-t border-zinc-200/70 dark:border-zinc-800">
+                      <div className="relative">
+                        <input
+                          type={showPassphraseDraft ? 'text' : 'password'}
+                          value={passphraseDraft}
+                          onChange={(e) => setPassphraseDraft(e.target.value)}
+                          placeholder="输入加密口令（多设备需填写相同口令）"
+                          autoComplete="off"
+                          className="w-full pl-3 pr-9 py-2 text-xs font-mono rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassphraseDraft((v) => !v)}
+                          title={showPassphraseDraft ? '隐藏口令' : '显示口令'}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                        >
+                          {showPassphraseDraft ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+
+                      <p className="text-[10px] text-zinc-500 leading-relaxed">
+                        口令仅保存在本设备浏览器本地，不会上传至 GitHub。开启后 Gist 网页端将不展示任务明细；请务必牢记口令，遗忘后密文无法恢复。
+                      </p>
+
+                      <div className="flex items-center flex-wrap gap-2">
+                        <button
+                          type="submit"
+                          disabled={isSyncing || !passphraseDraft.trim()}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          {isSyncing
+                            ? '处理中...'
+                            : encryptionEnabled || isPassphraseError
+                              ? '应用口令并同步'
+                              : '启用加密并同步'}
+                        </button>
+
+                        {encryptionEnabled && (
+                          <button
+                            type="button"
+                            disabled={isSyncing}
+                            onClick={() => void handleDisableEncryption()}
+                            className="px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-[11px] font-medium transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            关闭加密（转为明文）
+                          </button>
+                        )}
+
+                        {!isPassphraseError && (
+                          <button
+                            type="button"
+                            disabled={isSyncing}
+                            onClick={() => {
+                              setPassphraseDraft(gistPassphrase ?? '');
+                              setEditingEncryption(false);
+                            }}
+                            className="ml-auto px-2.5 py-1.5 rounded-lg text-[11px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-pointer"
+                          >
+                            取消
+                          </button>
+                        )}
+                      </div>
+                    </form>
+                  )}
+                </div>
+
                 {/* Gist File Status */}
                 <div className="p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 space-y-2 text-xs">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-zinc-500 flex items-center gap-1.5 shrink-0">
                       <FileJson className="w-3.5 h-3.5 text-blue-500" />
-                      <span>云端存档文件</span>
+                      <span>云端存储结构</span>
                     </span>
                     <span className="font-mono text-zinc-800 dark:text-zinc-200 font-medium truncate">
-                      {GIST_DATA_FILENAME}
+                      tasks.json + logs-YYYY-MM.json{encryptionEnabled ? '（密文）' : ''}
                     </span>
                   </div>
 

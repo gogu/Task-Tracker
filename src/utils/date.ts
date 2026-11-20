@@ -14,12 +14,6 @@ export function getTodayString(): string {
   return formatDate(new Date());
 }
 
-export function getYesterdayString(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return formatDate(d);
-}
-
 export function addDays(dateStr: string, days: number): string {
   const d = parseDate(dateStr);
   d.setDate(d.getDate() + days);
