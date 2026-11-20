@@ -2268,7 +2268,7 @@ export const KanbanView: React.FC = () => {
       case 'sync_menu':
         return {
           title: '卷宗同步与备份中心',
-          subtitle: '管理 Google Drive 云端同步、本地目录实时同步或 JSON 备份',
+          subtitle: '管理 GitHub Gist 云端自动同步、本地目录实时同步或 JSON 备份',
         };
       default:
         return {
@@ -2278,16 +2278,18 @@ export const KanbanView: React.FC = () => {
     }
   }, [dialogueMode, selectedTask, pomodoroBoundTask]);
 
-  // Drive & Local sync dot color helpers
+  // Gist & Local sync dot color helpers
   const driveDotClass = !user
     ? 'bg-stone-400'
-    : syncStatus === 'error'
-      ? 'bg-rose-500'
-      : isSyncing
-        ? 'bg-blue-400 animate-pulse'
-        : hasUnsyncedDriveChanges
-          ? 'bg-amber-400'
-          : 'bg-emerald-400';
+    : syncStatus === 'conflict'
+      ? 'bg-rose-500 animate-pulse'
+      : syncStatus === 'error'
+        ? 'bg-rose-500'
+        : isSyncing
+          ? 'bg-blue-400 animate-pulse'
+          : hasUnsyncedDriveChanges
+            ? 'bg-amber-400'
+            : 'bg-emerald-400';
 
   const localDotClass = !localSync.supported || !localSync.enabled
     ? 'bg-stone-400'
@@ -2602,7 +2604,13 @@ export const KanbanView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setDriveSyncModalOpen(true)}
-                title={user ? 'Google Drive 云端同步管理' : '连接 Google Drive'}
+                title={
+                  syncStatus === 'conflict'
+                    ? 'GitHub Gist 同步存在冲突 - 点击处理'
+                    : user
+                      ? 'GitHub Gist 云端同步管理'
+                      : '连接 GitHub Gist 云端同步'
+                }
                 className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
               >
                 <Cloud className="w-4 h-4 text-sky-400" />
@@ -5790,9 +5798,13 @@ export const KanbanView: React.FC = () => {
                           <Cloud className="w-6 h-6" />
                         </div>
                         <div>
-                          <div className="text-sm sm:text-base font-extrabold">Google Drive 云端同步</div>
+                          <div className="text-sm sm:text-base font-extrabold">GitHub Gist 云端同步</div>
                           <div className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-1">
-                            {user ? '已连接云端账号，点击管理或立即同步' : '绑定 Google 账号以跨设备自动同步'}
+                            {user
+                              ? syncStatus === 'conflict'
+                                ? '检测到云端与本地冲突，点击处理并合并'
+                                : '已连接 GitHub Gist，支持自动合并同步'
+                              : '配置 GitHub Token 实现 PC 与 iPad 自动同步'}
                           </div>
                         </div>
                       </button>

@@ -203,28 +203,32 @@ export const Header: React.FC = () => {
 
           {/* Backup, Sync & Import/Export Menu */}
           <div className="flex items-center gap-1.5 border-l border-zinc-200 dark:border-zinc-800 pl-2.5">
-            {/* Google Drive Cloud Sync Button */}
+            {/* GitHub Gist Cloud Sync Button */}
             {user ? (() => {
               const dotClass =
-                syncStatus === 'error'
-                  ? 'bg-rose-500'
-                  : isSyncing
-                    ? 'bg-blue-500 animate-pulse'
-                    : hasUnsyncedDriveChanges
-                      ? 'bg-amber-500'
-                      : 'bg-emerald-500';
+                syncStatus === 'conflict'
+                  ? 'bg-rose-500 animate-pulse'
+                  : syncStatus === 'error'
+                    ? 'bg-rose-500'
+                    : isSyncing
+                      ? 'bg-blue-500 animate-pulse'
+                      : hasUnsyncedDriveChanges
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500';
 
               const title =
-                syncStatus === 'error'
-                  ? 'Google Drive 同步出错 - 点击查看详情'
-                  : isSyncing
-                    ? 'Google Drive 正在同步中...'
-                    : hasUnsyncedDriveChanges
-                      ? `Google Drive 已连接 (${user.email || user.displayName || '已连接'}) - 本地有修改，待同步至云端`
-                      : `Google Drive 已连接 (${user.email || user.displayName || '已连接'}) - 已是最新，点击管理云端同步`;
+                syncStatus === 'conflict'
+                  ? 'GitHub Gist 同步存在冲突 - 点击处理'
+                  : syncStatus === 'error'
+                    ? 'GitHub Gist 同步出错 - 点击查看详情'
+                    : isSyncing
+                      ? 'GitHub Gist 正在同步中...'
+                      : hasUnsyncedDriveChanges
+                        ? `GitHub Gist 已连接 (@${user.login || user.displayName || '已连接'}) - 本地有修改，待同步至云端`
+                        : `GitHub Gist 已连接 (@${user.login || user.displayName || '已连接'}) - 已是最新，点击管理云端同步`;
 
               const btnClass =
-                syncStatus === 'error'
+                syncStatus === 'conflict' || syncStatus === 'error'
                   ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100/80'
                   : isSyncing
                     ? 'border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
@@ -233,7 +237,7 @@ export const Header: React.FC = () => {
                       : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/80';
 
               const iconClass =
-                syncStatus === 'error'
+                syncStatus === 'conflict' || syncStatus === 'error'
                   ? 'text-rose-600 dark:text-rose-400'
                   : isSyncing
                     ? 'animate-pulse text-blue-500'
@@ -254,18 +258,18 @@ export const Header: React.FC = () => {
                       className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-2 ring-white dark:ring-zinc-900 ${dotClass}`}
                     />
                   </div>
-                  <span className="hidden sm:inline">Drive 同步</span>
+                  <span className="hidden sm:inline">Gist 同步</span>
                 </button>
               );
             })() : (
               <button
                 type="button"
                 onClick={() => setDriveSyncModalOpen(true)}
-                title="连接 Google Drive 实现云端直连同步"
+                title="连接 GitHub Gist 实现云端自动同步"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all shadow-2xs cursor-pointer"
               >
                 <Cloud className="w-3.5 h-3.5 text-blue-500" />
-                <span className="hidden sm:inline">Drive 同步</span>
+                <span className="hidden sm:inline">Gist 同步</span>
               </button>
             )}
 

@@ -45,7 +45,9 @@ export const ConfirmModal: React.FC = () => {
     cancelText = '取消',
     variant = 'primary',
     altText,
+    secondaryAltText,
     onAlt,
+    onSecondaryAlt,
   } = confirmDialogState;
 
   const isDanger = variant === 'danger';
@@ -96,6 +98,15 @@ export const ConfirmModal: React.FC = () => {
               >
                 {cancelText}
               </button>
+              {secondaryAltText && onSecondaryAlt && (
+                <button
+                  type="button"
+                  onClick={onSecondaryAlt}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 transition-colors cursor-pointer"
+                >
+                  {secondaryAltText}
+                </button>
+              )}
               {altText && onAlt && (
                 <button
                   type="button"

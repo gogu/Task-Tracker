@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback, useRef } from 'react';
-import { User } from 'firebase/auth';
 import {
   TaskItem,
   DailyLog,
@@ -17,17 +16,20 @@ import {
   computeWorkSessionFromNow,
   addMinutesToTimeHHMM,
 } from '../utils/timeDistribution';
-import { initAuth, googleSignIn, logout, getAccessToken, getStoredUser, isTokenExpired, AuthUser } from '../services/auth';
 import {
-  findDriveFile,
-  createDriveFile,
-  readDriveFileContent,
-  updateDriveFileContent,
+  GIST_DATA_FILENAME,
+  GistUser,
+  GistFileInfo,
+  DriveSyncPayload,
   buildSyncPayload,
   computeContentHash,
-  DriveSyncPayload,
-  DRIVE_DATA_FILENAME,
-} from '../services/googleDrive';
+  verifyGistToken,
+  getGistById,
+  findExistingTrackerGist,
+  createTrackerGist,
+  updateTrackerGist,
+  mergeSyncPayloads,
+} from '../services/githubGist';
 import { useLocalSync, LocalSyncInfo, ChoiceResult } from '../hooks/useLocalSync';
 
 interface TaskContextType {
@@ -120,20 +122,25 @@ interface TaskContextType {
   showToast: (message: string, type?: 'success' | 'error' | 'info', allowUndo?: boolean) => void;
   hideToast: () => void;
 
-  // Google Drive Integration
-  user: AuthUser | User | null;
-  tokenExpired: boolean;
+  // GitHub Gist Cloud Sync Integration
+  user: GistUser | null;
+  gistToken: string | null;
+  gistHtmlUrl: string | null;
+  autoSyncEnabled: boolean;
+  setAutoSyncEnabled: (enabled: boolean) => void;
+  pendingConflictCount: number;
   isLoggingIn: boolean;
   isSyncing: boolean;
   lastSyncTime: string | null;
-  syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+  syncStatus: 'idle' | 'syncing' | 'success' | 'error' | 'conflict';
   hasUnsyncedDriveChanges: boolean;
   syncErrorMessage: string | null;
   driveFileId: string | null;
   driveSyncModalOpen: boolean;
   setDriveSyncModalOpen: (open: boolean) => void;
-  loginWithGoogle: (forceConsent?: boolean) => Promise<boolean>;
-  logoutFromGoogle: () => Promise<void>;
+  connectWithGistToken: (token: string, customGistId?: string) => Promise<boolean>;
+  logoutFromGist: () => Promise<void>;
+  syncWithGist: (options?: { silent?: boolean }) => Promise<boolean>;
   pushToDrive: (skipConfirm?: boolean) => Promise<boolean>;
   pullFromDrive: (skipConfirm?: boolean) => Promise<boolean>;
 
@@ -147,6 +154,8 @@ interface TaskContextType {
   writeLocalNow: () => Promise<boolean>;
   pullFromLocalFile: () => Promise<boolean>;
 }
+
+export type SyncChoiceResult = 'confirm' | 'alt' | 'secondary_alt' | 'cancel';
 
 export interface ConfirmDialogOptions {
   title: string;
@@ -164,19 +173,30 @@ export interface ChoiceDialogOptions {
   cancelText: string;
 }
 
+export interface SyncChoiceDialogOptions extends ChoiceDialogOptions {
+  secondaryAltText?: string;
+}
+
 export interface ConfirmDialogState extends ConfirmDialogOptions {
   isOpen: boolean;
-  /** When set, a third button is rendered and Enter no longer confirms (only Esc/cancel is a safe default). */
+  /** When set, extra action buttons are rendered and Enter no longer confirms (only Esc/cancel is a safe default). */
   altText?: string;
+  secondaryAltText?: string;
   onConfirm: () => void;
   onAlt?: () => void;
+  onSecondaryAlt?: () => void;
   onCancel: () => void;
 }
 
 const STORAGE_KEY = 'media_task_tracker_data_v1';
-const DRIVE_FILE_ID_KEY = 'media_tracker_drive_file_id';
-const LAST_SYNC_KEY = 'media_tracker_drive_last_sync';
-const DRIVE_LAST_SYNC_HASH_KEY = 'media_tracker_drive_last_sync_hash';
+const GIST_TOKEN_KEY = 'media_tracker_gist_token_v1';
+const GIST_ID_KEY = 'media_tracker_gist_id_v1';
+const GIST_HTML_URL_KEY = 'media_tracker_gist_html_url_v1';
+const GIST_USER_KEY = 'media_tracker_gist_user_v1';
+const GIST_LAST_SYNC_KEY = 'media_tracker_gist_last_sync_v1';
+const GIST_LAST_SYNC_HASH_KEY = 'media_tracker_gist_last_sync_hash_v1';
+const GIST_BASE_SNAPSHOT_KEY = 'media_tracker_gist_base_snapshot_v1';
+const GIST_AUTO_SYNC_KEY = 'media_tracker_gist_auto_sync_v1';
 const GANTT_GROUP_ORDER_KEY = 'gantt_group_order_v1';
 const VIEW_MODE_KEY = 'media_task_tracker_view_mode';
 const HISTORY_SESSION_KEY = 'media_task_tracker_history_session_v1';
@@ -355,18 +375,58 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [taskDetailTaskId, setTaskDetailTaskId] = useState<string | null>(null);
   const [pendingRestPrompt, setPendingRestPrompt] = useState<PendingRestPrompt | null>(null);
 
-  // Google Drive state
-  const [user, setUser] = useState<AuthUser | User | null>(() => getStoredUser());
-  const [tokenExpired, setTokenExpired] = useState<boolean>(() => isTokenExpired());
+  // GitHub Gist state
+  const [gistToken, setGistToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(GIST_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [user, setUser] = useState<GistUser | null>(() => {
+    try {
+      const raw = localStorage.getItem(GIST_USER_KEY);
+      return raw ? (JSON.parse(raw) as GistUser) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [autoSyncEnabled, setAutoSyncEnabledState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(GIST_AUTO_SYNC_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error' | 'conflict'>('idle');
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
-  const [driveFileId, setDriveFileId] = useState<string | null>(() => localStorage.getItem(DRIVE_FILE_ID_KEY));
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => localStorage.getItem(LAST_SYNC_KEY));
-  const [driveLastSyncHash, setDriveLastSyncHash] = useState<string | null>(() => localStorage.getItem(DRIVE_LAST_SYNC_HASH_KEY));
+  const [pendingConflictCount, setPendingConflictCount] = useState<number>(0);
+  const [driveFileId, setDriveFileId] = useState<string | null>(() => localStorage.getItem(GIST_ID_KEY));
+  const [gistHtmlUrl, setGistHtmlUrl] = useState<string | null>(() => localStorage.getItem(GIST_HTML_URL_KEY));
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => localStorage.getItem(GIST_LAST_SYNC_KEY));
+  const [driveLastSyncHash, setDriveLastSyncHash] = useState<string | null>(() => localStorage.getItem(GIST_LAST_SYNC_HASH_KEY));
   const [driveSyncModalOpen, setDriveSyncModalOpen] = useState<boolean>(false);
   const [localSyncModalOpen, setLocalSyncModalOpen] = useState<boolean>(false);
+
+  const gistTokenRef = useRef<string | null>(gistToken);
+  gistTokenRef.current = gistToken;
+  const gistIdRef = useRef<string | null>(driveFileId);
+  gistIdRef.current = driveFileId;
+  const isSyncingRef = useRef<boolean>(false);
+  const conflictModalActiveRef = useRef<boolean>(false);
+  const lastAutoCheckAtRef = useRef<number>(0);
+  const dismissedConflictKeyRef = useRef<string | null>(null);
+
+  const setAutoSyncEnabled = useCallback((enabled: boolean) => {
+    setAutoSyncEnabledState(enabled);
+    try {
+      localStorage.setItem(GIST_AUTO_SYNC_KEY, enabled ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const currentDataHash = useMemo(
     () => computeContentHash({ tasks, logs, ganttGroupOrder }),
@@ -374,10 +434,10 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   );
 
   const hasUnsyncedDriveChanges = useMemo(() => {
-    if (!user) return false;
+    if (!gistToken) return false;
     if (!driveLastSyncHash) return true;
     return currentDataHash !== driveLastSyncHash;
-  }, [user, driveLastSyncHash, currentDataHash]);
+  }, [gistToken, driveLastSyncHash, currentDataHash]);
 
   // In-App Confirm Dialog & Toast State
   const [confirmDialogState, setConfirmDialogState] = useState<ConfirmDialogState | null>(null);
@@ -402,7 +462,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     []
   );
 
-  // Three-way dialog: confirm / alt / cancel. Cancel (and Esc) is always the non-destructive exit.
+  // Three-way dialog for local sync hook
   const requestChoice = useCallback(
     (options: ChoiceDialogOptions): Promise<ChoiceResult> => {
       return new Promise<ChoiceResult>((resolve) => {
@@ -418,6 +478,38 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setConfirmDialogState(null);
             resolve('alt');
           },
+          onCancel: () => {
+            setConfirmDialogState(null);
+            resolve('cancel');
+          },
+        });
+      });
+    },
+    []
+  );
+
+  // Up to four-way dialog for GitHub Gist conflict resolution
+  const requestSyncChoice = useCallback(
+    (options: SyncChoiceDialogOptions): Promise<SyncChoiceResult> => {
+      return new Promise<SyncChoiceResult>((resolve) => {
+        setConfirmDialogState({
+          ...options,
+          isOpen: true,
+          variant: 'primary',
+          onConfirm: () => {
+            setConfirmDialogState(null);
+            resolve('confirm');
+          },
+          onAlt: () => {
+            setConfirmDialogState(null);
+            resolve('alt');
+          },
+          onSecondaryAlt: options.secondaryAltText
+            ? () => {
+                setConfirmDialogState(null);
+                resolve('secondary_alt');
+              }
+            : undefined,
           onCancel: () => {
             setConfirmDialogState(null);
             resolve('cancel');
@@ -580,21 +672,28 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [tasks, logs]);
 
-  // Init Firebase Auth state
+  // Refresh stored GitHub user profile quietly when a token is already present
   useEffect(() => {
-    const unsubscribe = initAuth(
-      (currentUser) => {
-        setUser(currentUser);
-        setTokenExpired(isTokenExpired());
-      },
-      () => {
-        setUser(null);
-        setTokenExpired(true);
-      }
-    );
+    const token = gistTokenRef.current;
+    if (!token || user) return;
+    let cancelled = false;
+    verifyGistToken(token)
+      .then((profile) => {
+        if (cancelled) return;
+        setUser(profile);
+        try {
+          localStorage.setItem(GIST_USER_KEY, JSON.stringify(profile));
+        } catch {
+          // ignore
+        }
+      })
+      .catch(() => {
+        // Error will be surfaced on sync attempt if token is invalid
+      });
     return () => {
-      if (typeof unsubscribe === 'function') unsubscribe();
+      cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Extract all unique tags
@@ -1392,25 +1491,291 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [tasks, logs]
   );
 
-  // Google Drive Operations with explicit user confirmation for destructive actions
+  // GitHub Gist Base Snapshot & Sync State Helpers
+  const loadBaseSnapshot = useCallback((): DriveSyncPayload | null => {
+    try {
+      const raw = localStorage.getItem(GIST_BASE_SNAPSHOT_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.tasks) && Array.isArray(parsed.logs)) {
+        return parsed as DriveSyncPayload;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }, []);
+
+  const persistSyncSuccessState = useCallback(
+    (gistInfo: { id: string; htmlUrl?: string }, syncedPayload: DriveSyncPayload) => {
+      const normalizedPayload: DriveSyncPayload = {
+        ...syncedPayload,
+        ganttGroupOrder: Array.isArray(syncedPayload.ganttGroupOrder) ? syncedPayload.ganttGroupOrder : [],
+      };
+      const newHash = computeContentHash({
+        tasks: normalizedPayload.tasks,
+        logs: normalizedPayload.logs,
+        ganttGroupOrder: normalizedPayload.ganttGroupOrder,
+      });
+      const nowIso = new Date().toISOString();
+
+      gistIdRef.current = gistInfo.id;
+      setDriveFileId(gistInfo.id);
+      localStorage.setItem(GIST_ID_KEY, gistInfo.id);
+
+      if (gistInfo.htmlUrl) {
+        setGistHtmlUrl(gistInfo.htmlUrl);
+        localStorage.setItem(GIST_HTML_URL_KEY, gistInfo.htmlUrl);
+      }
+
+      setLastSyncTime(nowIso);
+      localStorage.setItem(GIST_LAST_SYNC_KEY, nowIso);
+      setDriveLastSyncHash(newHash);
+      localStorage.setItem(GIST_LAST_SYNC_HASH_KEY, newHash);
+
+      try {
+        localStorage.setItem(GIST_BASE_SNAPSHOT_KEY, JSON.stringify(normalizedPayload));
+      } catch (e) {
+        console.warn('Failed to save Gist base snapshot:', e);
+      }
+
+      dismissedConflictKeyRef.current = null;
+      setPendingConflictCount(0);
+      setSyncErrorMessage(null);
+      setSyncStatus('success');
+    },
+    []
+  );
+
+  const applyGistPayloadToState = useCallback(
+    (payload: DriveSyncPayload) => {
+      setTasks(payload.tasks);
+      setLogs(payload.logs);
+      setGanttGroupOrderSilent(Array.isArray(payload.ganttGroupOrder) ? payload.ganttGroupOrder : []);
+    },
+    [setGanttGroupOrderSilent]
+  );
+
+  const syncWithGist = useCallback(
+    async (options?: {
+      silent?: boolean;
+      overrideToken?: string;
+      overrideGistId?: string | null;
+    }): Promise<boolean> => {
+      const silent = options?.silent ?? false;
+      const token = (options?.overrideToken ?? gistTokenRef.current)?.trim() || '';
+      if (!token) {
+        if (!silent) {
+          setSyncErrorMessage('尚未配置 GitHub Token，请先连接 GitHub Gist');
+          setSyncStatus('error');
+        }
+        return false;
+      }
+
+      if (isSyncingRef.current || conflictModalActiveRef.current) {
+        return false;
+      }
+
+      isSyncingRef.current = true;
+      lastAutoCheckAtRef.current = Date.now();
+      setIsSyncing(true);
+      if (!silent) {
+        setSyncStatus('syncing');
+      }
+      setSyncErrorMessage(null);
+
+      try {
+        const explicitGistId =
+          options?.overrideGistId !== undefined ? options.overrideGistId : gistIdRef.current;
+
+        let remoteGist: GistFileInfo | null = null;
+        if (explicitGistId) {
+          try {
+            remoteGist = await getGistById(token, explicitGistId);
+          } catch (err: any) {
+            if (options?.overrideGistId) {
+              throw err;
+            }
+            // If cached gistId was deleted remotely (404), try searching all gists
+            if (String(err?.message || '').includes('404')) {
+              remoteGist = await findExistingTrackerGist(token);
+            } else {
+              throw err;
+            }
+          }
+        } else {
+          remoteGist = await findExistingTrackerGist(token);
+        }
+
+        // Case A: Cloud file does not exist yet -> create or update gist with current local data
+        if (!remoteGist || !remoteGist.payload) {
+          const currentPayload = buildSyncPayload(latestStateRef.current);
+          const created = remoteGist
+            ? await updateTrackerGist(token, remoteGist.id, currentPayload)
+            : await createTrackerGist(token, currentPayload);
+          persistSyncSuccessState(created, currentPayload);
+          showToast(
+            silent ? '已自动初始化 GitHub Gist 云端存档' : '已在 GitHub Gist 创建并上传云端存档',
+            'success'
+          );
+          return true;
+        }
+
+        const cloudPayload = remoteGist.payload;
+        const baseSnapshot = loadBaseSnapshot();
+        const localPayloadNow = buildSyncPayload(latestStateRef.current);
+        const analysis = mergeSyncPayloads(baseSnapshot, localPayloadNow, cloudPayload);
+
+        if (analysis.status === 'identical') {
+          persistSyncSuccessState(remoteGist, localPayloadNow);
+          if (!silent) {
+            showToast('本地与 GitHub Gist 数据已是最新', 'success');
+          }
+          return true;
+        }
+
+        if (analysis.status === 'local-ahead') {
+          const updated = await updateTrackerGist(token, remoteGist.id, localPayloadNow);
+          persistSyncSuccessState(updated, localPayloadNow);
+          if (!silent) {
+            showToast('已同步本地修改至 GitHub Gist', 'success');
+          }
+          return true;
+        }
+
+        if (analysis.status === 'cloud-ahead') {
+          pushHistory('从 GitHub Gist 自动同步云端更新');
+          persistSyncSuccessState(remoteGist, cloudPayload);
+          applyGistPayloadToState(cloudPayload);
+          showToast('已从 GitHub Gist 同步最新云端数据', 'success');
+          return true;
+        }
+
+        if (analysis.status === 'auto-merged') {
+          pushHistory('自动合并本地与 GitHub Gist 云端数据');
+          const updated = await updateTrackerGist(token, remoteGist.id, analysis.mergedPayload);
+          persistSyncSuccessState(updated, analysis.mergedPayload);
+          applyGistPayloadToState(analysis.mergedPayload);
+          showToast('已自动合并云端与本地变更并完成同步', 'success');
+          return true;
+        }
+
+        // analysis.status === 'conflict'
+        const localHash = computeContentHash(localPayloadNow);
+        const cloudHash = computeContentHash(cloudPayload);
+        const conflictPairKey = `${localHash}__${cloudHash}`;
+
+        setPendingConflictCount(analysis.conflicts.length);
+        setSyncStatus('conflict');
+
+        if (silent && dismissedConflictKeyRef.current === conflictPairKey) {
+          return false;
+        }
+
+        const previewLines = analysis.conflicts
+          .slice(0, 5)
+          .map((c) => `• ${c.title}：${c.detail}`);
+        if (analysis.conflicts.length > 5) {
+          previewLines.push(`• ……另有 ${analysis.conflicts.length - 5} 项冲突记录`);
+        }
+
+        const cloudTimeText = remoteGist.updatedAt
+          ? new Date(remoteGist.updatedAt).toLocaleString('zh-CN')
+          : '未知时间';
+
+        conflictModalActiveRef.current = true;
+        let choice: SyncChoiceResult = 'cancel';
+        try {
+          choice = await requestSyncChoice({
+            title: '检测到云端与本地同步冲突',
+            message:
+              `两端同时修改了以下 ${analysis.conflicts.length} 处记录：\n` +
+              `${previewLines.join('\n')}\n\n` +
+              `本地：${localPayloadNow.tasks.length} 项任务 · ${localPayloadNow.logs.length} 条打卡\n` +
+              `云端：${cloudPayload.tasks.length} 项任务 · ${cloudPayload.logs.length} 条打卡（更新于 ${cloudTimeText}）\n\n` +
+              `选择「智能合并」将保留两端所有无冲突的新增任务与打卡，冲突字段以最新修改时间为准。`,
+            confirmText: '智能合并并同步（推荐）',
+            altText: '用云端覆盖本地',
+            secondaryAltText: '用本地覆盖云端',
+            cancelText: '暂不处理',
+          });
+        } finally {
+          conflictModalActiveRef.current = false;
+        }
+
+        // Re-read latest state in case user somehow modified something while dialog was open
+        const latestLocal = buildSyncPayload(latestStateRef.current);
+        const latestAnalysis =
+          computeContentHash(latestLocal) === localHash
+            ? analysis
+            : mergeSyncPayloads(baseSnapshot, latestLocal, cloudPayload);
+
+        if (choice === 'confirm') {
+          pushHistory('智能合并云端与本地冲突数据');
+          const updated = await updateTrackerGist(token, remoteGist.id, latestAnalysis.mergedPayload);
+          persistSyncSuccessState(updated, latestAnalysis.mergedPayload);
+          applyGistPayloadToState(latestAnalysis.mergedPayload);
+          showToast('已完成智能合并并同步至 GitHub Gist', 'success');
+          return true;
+        }
+
+        if (choice === 'alt') {
+          pushHistory('以 GitHub Gist 云端数据覆盖本地');
+          persistSyncSuccessState(remoteGist, cloudPayload);
+          applyGistPayloadToState(cloudPayload);
+          showToast('已使用云端数据覆盖本地', 'info');
+          return true;
+        }
+
+        if (choice === 'secondary_alt') {
+          const updated = await updateTrackerGist(token, remoteGist.id, latestLocal);
+          persistSyncSuccessState(updated, latestLocal);
+          showToast('已使用本地数据覆盖 GitHub Gist 云端', 'success');
+          return true;
+        }
+
+        dismissedConflictKeyRef.current = conflictPairKey;
+        setSyncStatus('conflict');
+        return false;
+      } catch (err: any) {
+        console.error('GitHub Gist sync error:', err);
+        setSyncErrorMessage(err?.message || 'GitHub Gist 同步失败');
+        setSyncStatus('error');
+        if (!silent) {
+          showToast(err?.message || 'GitHub Gist 同步失败', 'error');
+        }
+        return false;
+      } finally {
+        isSyncingRef.current = false;
+        setIsSyncing(false);
+      }
+    },
+    [
+      loadBaseSnapshot,
+      persistSyncSuccessState,
+      applyGistPayloadToState,
+      pushHistory,
+      requestSyncChoice,
+      showToast,
+    ]
+  );
+
+  // Manual force push (local -> cloud)
   const pushToDrive = useCallback(
     async (skipConfirm: boolean = false): Promise<boolean> => {
-      let token = await getAccessToken();
+      const token = gistTokenRef.current?.trim();
       if (!token) {
-        setTokenExpired(true);
-        if (user) {
-          setSyncErrorMessage('Google Drive 访问凭证已到期（1小时安全期），请在下方点击「一键快捷续期」即可恢复同步。');
-        } else {
-          setSyncErrorMessage('未获得有效 Google Drive 授权，请先连接 Google 账号');
-        }
+        setSyncErrorMessage('尚未配置 GitHub Token，请先连接 GitHub Gist');
         setSyncStatus('error');
         return false;
       }
 
+      const snapshot = buildSyncPayload(latestStateRef.current);
+
       if (!skipConfirm) {
         const confirmed = await requestConfirm({
-          title: '上传数据至 Google Drive',
-          message: `确定要将本地数据上传并覆盖 Google Drive 中的「${DRIVE_DATA_FILENAME}」吗？\n当前本地包含：${tasks.length} 项任务、${logs.length} 条打卡日志。\n云端现有历史将被完整替换。`,
+          title: '上传并覆盖 GitHub Gist 云端数据',
+          message: `确定要用当前本地数据强行覆盖 GitHub Gist 中的「${GIST_DATA_FILENAME}」吗？\n当前本地包含：${snapshot.tasks.length} 项任务、${snapshot.logs.length} 条打卡日志。\n云端当前内容将被本地完整替换。`,
           confirmText: '确认上传覆盖',
           cancelText: '取消',
           variant: 'primary',
@@ -1418,68 +1783,56 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!confirmed) return false;
       }
 
+      if (isSyncingRef.current) return false;
+      isSyncingRef.current = true;
       setIsSyncing(true);
       setSyncStatus('syncing');
       setSyncErrorMessage(null);
 
       try {
-        let fileId = driveFileId;
-        if (!fileId) {
-          const found = await findDriveFile(token);
-          if (found) {
-            fileId = found.id;
-          } else {
-            const created = await createDriveFile(token, { tasks, logs, ganttGroupOrder });
-            fileId = created.id;
-          }
+        let gistId = gistIdRef.current;
+        let gistInfo: GistFileInfo;
+        if (gistId) {
+          gistInfo = await updateTrackerGist(token, gistId, snapshot);
         } else {
-          await updateDriveFileContent(token, fileId, { tasks, logs, ganttGroupOrder });
+          const found = await findExistingTrackerGist(token);
+          if (found) {
+            gistInfo = await updateTrackerGist(token, found.id, snapshot);
+          } else {
+            gistInfo = await createTrackerGist(token, snapshot);
+          }
         }
 
-        if (fileId) {
-          setDriveFileId(fileId);
-          localStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
-        }
-
-        const nowIso = new Date().toISOString();
-        setLastSyncTime(nowIso);
-        localStorage.setItem(LAST_SYNC_KEY, nowIso);
-        const newHash = computeContentHash({ tasks, logs, ganttGroupOrder });
-        setDriveLastSyncHash(newHash);
-        localStorage.setItem(DRIVE_LAST_SYNC_HASH_KEY, newHash);
-        setSyncStatus('success');
-        showToast('已成功上传并同步至 Google Drive', 'success');
+        persistSyncSuccessState(gistInfo, snapshot);
+        showToast('已将本地数据上传覆盖至 GitHub Gist', 'success');
         return true;
       } catch (err: any) {
-        console.error('Push to Google Drive error:', err);
-        setSyncErrorMessage(err.message || '上传同步到 Google Drive 失败');
+        console.error('Push to GitHub Gist error:', err);
+        setSyncErrorMessage(err?.message || '上传同步到 GitHub Gist 失败');
         setSyncStatus('error');
         return false;
       } finally {
+        isSyncingRef.current = false;
         setIsSyncing(false);
       }
     },
-    [driveFileId, tasks, logs, ganttGroupOrder, requestConfirm, showToast, user]
+    [requestConfirm, persistSyncSuccessState, showToast]
   );
 
+  // Manual force pull (cloud -> local)
   const pullFromDrive = useCallback(
     async (skipConfirm: boolean = false): Promise<boolean> => {
-      let token = await getAccessToken();
+      const token = gistTokenRef.current?.trim();
       if (!token) {
-        setTokenExpired(true);
-        if (user) {
-          setSyncErrorMessage('Google Drive 访问凭证已到期（1小时安全期），请在下方点击「一键快捷续期」即可恢复同步。');
-        } else {
-          setSyncErrorMessage('未获得有效 Google Drive 授权，请先连接 Google 账号');
-        }
+        setSyncErrorMessage('尚未配置 GitHub Token，请先连接 GitHub Gist');
         setSyncStatus('error');
         return false;
       }
 
       if (!skipConfirm) {
         const confirmed = await requestConfirm({
-          title: '从 Google Drive 拉取数据',
-          message: `确定要从 Google Drive 拉取「${DRIVE_DATA_FILENAME}」并覆盖当前本地数据吗？\n拉取后，本地尚未上传的修改将被云端完整覆盖。`,
+          title: '从 GitHub Gist 拉取并覆盖本地',
+          message: `确定要从 GitHub Gist 拉取「${GIST_DATA_FILENAME}」并强行覆盖当前本地数据吗？\n拉取后，本地尚未上传的修改将被云端完整覆盖（可通过 Ctrl+Z 撤销）。`,
           confirmText: '确认拉取覆盖',
           cancelText: '取消',
           variant: 'danger',
@@ -1487,137 +1840,155 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!confirmed) return false;
       }
 
+      if (isSyncingRef.current) return false;
+      isSyncingRef.current = true;
       setIsSyncing(true);
       setSyncStatus('syncing');
       setSyncErrorMessage(null);
 
       try {
-        let fileId = driveFileId;
-        if (!fileId) {
-          const found = await findDriveFile(token);
-          if (found) {
-            fileId = found.id;
-          } else {
-            throw new Error('Google Drive 中尚未找到本系统的数据备份文件，请先点击「上传本地至云端」');
-          }
+        let gistInfo: GistFileInfo | null = null;
+        if (gistIdRef.current) {
+          gistInfo = await getGistById(token, gistIdRef.current);
+        } else {
+          gistInfo = await findExistingTrackerGist(token);
         }
 
-        const payload = await readDriveFileContent(token, fileId);
-        if (!payload || !Array.isArray(payload.tasks) || !Array.isArray(payload.logs)) {
-          throw new Error('从 Google Drive 读取的数据结构异常或为空');
+        if (!gistInfo || !gistInfo.payload) {
+          throw new Error('GitHub Gist 中尚未找到本系统的数据存档，请先点击「上传本地覆盖云端」');
         }
 
-        pushHistory('从 Google Drive 拉取数据');
-        setTasks(payload.tasks);
-        setLogs(payload.logs);
-        // Restore group order if present in cloud data
-        if (Array.isArray(payload.ganttGroupOrder) && payload.ganttGroupOrder.length > 0) {
-          setGanttGroupOrderSilent(payload.ganttGroupOrder);
-        }
-
-        setDriveFileId(fileId);
-        localStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
-
-        const nowIso = new Date().toISOString();
-        setLastSyncTime(nowIso);
-        localStorage.setItem(LAST_SYNC_KEY, nowIso);
-        const newHash = computeContentHash({
-          tasks: payload.tasks,
-          logs: payload.logs,
-          ganttGroupOrder: payload.ganttGroupOrder,
-        });
-        setDriveLastSyncHash(newHash);
-        localStorage.setItem(DRIVE_LAST_SYNC_HASH_KEY, newHash);
-        setSyncStatus('success');
-        showToast('已成功从 Google Drive 拉取云端数据', 'success');
+        pushHistory('从 GitHub Gist 强行拉取覆盖本地');
+        persistSyncSuccessState(gistInfo, gistInfo.payload);
+        applyGistPayloadToState(gistInfo.payload);
+        showToast('已从 GitHub Gist 拉取云端数据覆盖本地', 'success');
         return true;
       } catch (err: any) {
-        console.error('Pull from Google Drive error:', err);
-        setSyncErrorMessage(err.message || '从 Google Drive 拉取数据失败');
+        console.error('Pull from GitHub Gist error:', err);
+        setSyncErrorMessage(err?.message || '从 GitHub Gist 拉取数据失败');
         setSyncStatus('error');
         return false;
       } finally {
+        isSyncingRef.current = false;
         setIsSyncing(false);
       }
     },
-    [driveFileId, requestConfirm, showToast, user, setGanttGroupOrderSilent, pushHistory]
+    [requestConfirm, pushHistory, persistSyncSuccessState, applyGistPayloadToState, showToast]
   );
 
-  const loginWithGoogle = async (forceConsent: boolean = false): Promise<boolean> => {
-    setIsLoggingIn(true);
-    setSyncErrorMessage(null);
-    try {
-      const result = await googleSignIn(forceConsent);
-      if (result) {
-        setUser(result.user);
-        setTokenExpired(false);
-        showToast(`Google 账号已连接：${result.user.displayName || result.user.email}`, 'success');
+  const connectWithGistToken = useCallback(
+    async (tokenInput: string, customGistId?: string): Promise<boolean> => {
+      const trimmedToken = tokenInput.trim();
+      const trimmedGistId = customGistId?.trim() || null;
 
-        // Check if a data file already exists in Drive
-        const found = await findDriveFile(result.accessToken);
-        if (found) {
-          setDriveFileId(found.id);
-          localStorage.setItem(DRIVE_FILE_ID_KEY, found.id);
+      setIsLoggingIn(true);
+      setSyncErrorMessage(null);
+      try {
+        const profile = await verifyGistToken(trimmedToken);
 
-          // Decide whether to prompt a pull:
-          // 1. Local has no meaningful data (empty task list), OR
-          // 2. Cloud file was modified after the last successful sync (cloud is ahead)
-          const localIsEmpty = tasks.length === 0;
-          const cloudModifiedTime = found.modifiedTime ? new Date(found.modifiedTime).getTime() : null;
-          const lastSync = lastSyncTime ? new Date(lastSyncTime).getTime() : null;
-          const cloudIsNewer = cloudModifiedTime !== null && (lastSync === null || cloudModifiedTime > lastSync);
+        gistTokenRef.current = trimmedToken;
+        setGistToken(trimmedToken);
+        localStorage.setItem(GIST_TOKEN_KEY, trimmedToken);
 
-          if (localIsEmpty || cloudIsNewer) {
-            const reason = localIsEmpty
-              ? '本地暂无任务数据'
-              : `云端文件已于 ${found.modifiedTime ? new Date(found.modifiedTime).toLocaleString('zh-CN') : '未知时间'} 更新，晚于上次同步`;
-            const wantsPull = await requestConfirm({
-              title: '云端有可用数据',
-              message: `${reason}。\n\n是否从 Google Drive 拉取云端数据覆盖本地？`,
-              confirmText: '拉取云端数据',
-              cancelText: '保留当前本地',
-              variant: 'primary',
-            });
-            if (wantsPull) {
-              await pullFromDrive(true);
-            }
-          }
-          // else: cloud is not newer — silently keep local, no dialog needed
+        setUser(profile);
+        localStorage.setItem(GIST_USER_KEY, JSON.stringify(profile));
+
+        if (trimmedGistId) {
+          gistIdRef.current = trimmedGistId;
+          setDriveFileId(trimmedGistId);
+          localStorage.setItem(GIST_ID_KEY, trimmedGistId);
         } else {
-          // No file in Drive yet — prompt to upload local data
-          const wantsPush = await requestConfirm({
-            title: '初始化云端数据文件',
-            message: `已连接 Google Drive，但云端尚未创建「${DRIVE_DATA_FILENAME}」。\n\n是否将当前本地的 ${tasks.length} 项任务上传到 Google Drive 初始化云端文件？`,
-            confirmText: '立即上传至云端',
-            cancelText: '稍后手动上传',
-            variant: 'primary',
-          });
-          if (wantsPush) {
-            await pushToDrive(true);
-          }
+          gistIdRef.current = null;
+          setDriveFileId(null);
+          localStorage.removeItem(GIST_ID_KEY);
+          setGistHtmlUrl(null);
+          localStorage.removeItem(GIST_HTML_URL_KEY);
         }
-        return true;
-      }
-      return false;
-    } catch (err: any) {
-      console.error('Google Sign-in failed:', err);
-      setSyncErrorMessage(err.message || 'Google 登录授权失败');
-      return false;
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
 
-  const logoutFromGoogle = async () => {
-    await logout();
+        localStorage.removeItem(GIST_BASE_SNAPSHOT_KEY);
+        localStorage.removeItem(GIST_LAST_SYNC_HASH_KEY);
+        setDriveLastSyncHash(null);
+
+        showToast(`GitHub 账号已连接：${profile.displayName} (@${profile.login})`, 'success');
+
+        await syncWithGist({
+          silent: false,
+          overrideToken: trimmedToken,
+          overrideGistId: trimmedGistId,
+        });
+        return true;
+      } catch (err: any) {
+        console.error('Connect GitHub Gist failed:', err);
+        setSyncErrorMessage(err?.message || '连接 GitHub Gist 失败');
+        setSyncStatus('error');
+        return false;
+      } finally {
+        setIsLoggingIn(false);
+      }
+    },
+    [showToast, syncWithGist]
+  );
+
+  const logoutFromGist = useCallback(async () => {
+    gistTokenRef.current = null;
+    gistIdRef.current = null;
+    dismissedConflictKeyRef.current = null;
+
+    localStorage.removeItem(GIST_TOKEN_KEY);
+    localStorage.removeItem(GIST_ID_KEY);
+    localStorage.removeItem(GIST_HTML_URL_KEY);
+    localStorage.removeItem(GIST_USER_KEY);
+    localStorage.removeItem(GIST_LAST_SYNC_KEY);
+    localStorage.removeItem(GIST_LAST_SYNC_HASH_KEY);
+    localStorage.removeItem(GIST_BASE_SNAPSHOT_KEY);
+
+    setGistToken(null);
     setUser(null);
-    setTokenExpired(true);
-    setSyncStatus('idle');
+    setDriveFileId(null);
+    setGistHtmlUrl(null);
+    setLastSyncTime(null);
     setDriveLastSyncHash(null);
-    localStorage.removeItem(DRIVE_LAST_SYNC_HASH_KEY);
+    setPendingConflictCount(0);
+    setSyncStatus('idle');
     setSyncErrorMessage(null);
-    showToast('已断开 Google Drive 连接', 'info');
-  };
+    showToast('已断开 GitHub Gist 云端同步', 'info');
+  }, [showToast]);
+
+  // Auto-sync Trigger 1: Initial mount
+  useEffect(() => {
+    if (!gistTokenRef.current || !autoSyncEnabled) return;
+    void syncWithGist({ silent: true });
+    // Run once on mount only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-sync Trigger 2: Window focus / visibility return (15s throttle)
+  useEffect(() => {
+    if (!gistToken || !autoSyncEnabled) return;
+    const handleResumeCheck = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (isSyncingRef.current || conflictModalActiveRef.current) return;
+      if (Date.now() - lastAutoCheckAtRef.current < 15_000) return;
+      void syncWithGist({ silent: true });
+    };
+
+    window.addEventListener('focus', handleResumeCheck);
+    document.addEventListener('visibilitychange', handleResumeCheck);
+    return () => {
+      window.removeEventListener('focus', handleResumeCheck);
+      document.removeEventListener('visibilitychange', handleResumeCheck);
+    };
+  }, [gistToken, autoSyncEnabled, syncWithGist]);
+
+  // Auto-sync Trigger 3: Debounced auto-sync 3s after local edits
+  useEffect(() => {
+    if (!gistToken || !autoSyncEnabled || !hasUnsyncedDriveChanges) return;
+    const timer = window.setTimeout(() => {
+      if (isSyncingRef.current || conflictModalActiveRef.current) return;
+      void syncWithGist({ silent: true });
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [gistToken, autoSyncEnabled, hasUnsyncedDriveChanges, currentDataHash, syncWithGist]);
 
   // Modals helpers
   const openCheckInModal = (task: TaskItem, date?: string) => {
@@ -1761,7 +2132,11 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         showToast,
         hideToast,
         user,
-        tokenExpired,
+        gistToken,
+        gistHtmlUrl,
+        autoSyncEnabled,
+        setAutoSyncEnabled,
+        pendingConflictCount,
         isLoggingIn,
         isSyncing,
         lastSyncTime,
@@ -1771,8 +2146,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         driveFileId,
         driveSyncModalOpen,
         setDriveSyncModalOpen,
-        loginWithGoogle,
-        logoutFromGoogle,
+        connectWithGistToken,
+        logoutFromGist,
+        syncWithGist,
         pushToDrive,
         pullFromDrive,
         localSync,
