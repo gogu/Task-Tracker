@@ -64,6 +64,10 @@ const AppContent: React.FC = () => {
       style={{
         height: 'var(--app-height, 100dvh)',
         maxHeight: 'var(--app-height, 100dvh)',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        paddingLeft: 'env(safe-area-inset-left, 0px)',
+        paddingRight: 'env(safe-area-inset-right, 0px)',
       }}
     >
       <main className="max-w-[1440px] w-full h-full mx-auto p-1 sm:p-2 xl:p-3 flex flex-col min-w-0 min-h-0 overflow-hidden">

@@ -979,7 +979,7 @@ export const KanbanView: React.FC = () => {
   }, [npcConfig.expressions]);
 
   const desiredRawSrc = npcConfig.expressions[expression] || npcConfig.expressions.normal;
-  const bgRawSrc = npcConfig.customBgUrl || './npc/bg-guild-hall.jpg';
+  const bgRawSrc = npcConfig.customBgUrl || './npc/bg-starry-loft.jpg';
 
   useEffect(() => {
     setLoadedRawSrcs({});

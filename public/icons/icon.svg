@@ -1,9 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#18181b"/>
-  <rect x="5"  y="14" width="5" height="13" rx="1.5" fill="#71717a"/>
-  <rect x="13" y="8"  width="5" height="19" rx="1.5" fill="#3b82f6"/>
-  <rect x="21" y="11" width="5" height="16" rx="1.5" fill="#71717a"/>
-  <circle cx="26" cy="7" r="4" fill="#3b82f6"/>
-  <circle cx="26" cy="7" r="2" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="65%">
+      <stop offset="0%" stop-color="#2c1d12"/>
+      <stop offset="100%" stop-color="#120c08"/>
+    </radialGradient>
+    <linearGradient id="brass" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fcd34d"/>
+      <stop offset="50%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#92400e"/>
+    </linearGradient>
+    <linearGradient id="parchment" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fffbeb"/>
+      <stop offset="100%" stop-color="#ead7b3"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="12.5" fill="none" stroke="#f59e0b" stroke-opacity="0.32" stroke-width="1.5"/>
+  <g transform="rotate(-10 24 32)">
+    <rect x="11" y="14" width="24" height="32" rx="3.5" fill="url(#parchment)" stroke="#b45309" stroke-width="1.5"/>
+    <line x1="16" y1="22" x2="29" y2="22" stroke="#b45309" stroke-opacity="0.55" stroke-width="2" stroke-linecap="round"/>
+    <line x1="16" y1="28" x2="27" y2="28" stroke="#b45309" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round"/>
+    <line x1="16" y1="34" x2="24" y2="34" stroke="#b45309" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <rect x="33.5" y="11" width="7" height="4.5" rx="1.5" fill="url(#brass)"/>
+  <circle cx="37" cy="9.5" r="3" fill="none" stroke="url(#brass)" stroke-width="2"/>
+  <circle cx="37" cy="34" r="18" fill="url(#brass)"/>
+  <circle cx="37" cy="34" r="14.5" fill="#fdf6e7" stroke="#78350f" stroke-width="1.2"/>
+  <path d="M 37 22 A 12 12 0 1 1 26.6 40" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="37" cy="22" r="1.2" fill="#78350f"/>
+  <circle cx="49" cy="34" r="1.2" fill="#78350f"/>
+  <circle cx="37" cy="46" r="1.2" fill="#78350f"/>
+  <circle cx="25" cy="34" r="1.2" fill="#78350f"/>
+  <line x1="37" y1="34" x2="37" y2="25.5" stroke="#92400e" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="37" y1="34" x2="43.5" y2="37.5" stroke="#d97706" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="37" cy="34" r="2.4" fill="#d97706" stroke="#fef3c7" stroke-width="1"/>
+  <circle cx="21" cy="46" r="6.5" fill="#e11d48" stroke="#9f1239" stroke-width="1.2"/>
+  <path d="M 21 42.3 L 22.1 44.6 L 24.6 44.9 L 22.8 46.6 L 23.2 49.1 L 21 47.9 L 18.8 49.1 L 19.2 46.6 L 17.4 44.9 L 19.9 44.6 Z" fill="#fef3c7"/>
 </svg>
-

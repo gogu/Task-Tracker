@@ -33,10 +33,10 @@ def remove_green_screen(rgba: np.ndarray) -> np.ndarray:
     max_rb = np.maximum(r, b)
 
     is_chroma = (a < 16) | (
-        (g >= 65) & ((g - max_rb) >= 20) & (g > r * 1.15) & (g > b * 1.15)
+        (g >= 80) & ((g - max_rb) >= 34) & (g > r * 1.28) & (g > b * 1.28)
     )
     is_seed = (
-        (a >= 16) & (g >= 115) & ((g - max_rb) >= 42) & (g > r * 1.32) & (g > b * 1.32)
+        (a >= 16) & (g >= 115) & ((g - max_rb) >= 48) & (g > r * 1.35) & (g > b * 1.35)
     )
 
     visited = np.zeros((h, w), dtype=bool)
@@ -235,7 +235,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--character",
-        choices=("sakuya", "alice", "lynn"),
+        choices=("sakuya", "momo", "lynn"),
         help="Target built-in character name (routes --<expr> inputs to public/npc/<character>-<expr>.png).",
     )
     parser.add_argument(

@@ -57,23 +57,23 @@ export const EXPRESSION_META: Record<
 
 export const NPC_PRESETS: NpcPreset[] = [
   {
-    id: 'fantasy_guild',
-    badge: '🏰 奇幻公会',
-    themeName: '晨曦冒险者公会',
-    desc: '暖木与琉璃花窗交织的古典公会大厅，温柔可靠的首席接待员',
-    greeting: '欢迎回到晨曦冒险者公会！我是首席接待员艾莉丝，今天要登记新委托还是汇报进度呢？',
+    id: 'starry_loft',
+    badge: '🌙 星夜阁楼',
+    themeName: '星夜手账阁楼',
+    desc: '繁星夜色与暖灯相伴的木质阁楼书房，带着小白猫一起记账打卡的手账搭档',
+    greeting: '欢迎回到星夜手账阁楼！我是小桃，和小白已经把笔记本和印章准备好啦，今天要登记新委托还是汇报进度呢？',
     config: {
-      presetId: 'fantasy_guild',
-      name: '艾莉丝',
-      title: '公会首席接待员',
+      presetId: 'starry_loft',
+      name: '小桃',
+      title: '公会手账搭档',
       displayMode: 'sprite',
-      customBgUrl: './npc/bg-guild-hall.jpg',
+      customBgUrl: './npc/bg-starry-loft.jpg',
       expressions: {
-        normal: './npc/alice-normal.png',
-        happy: './npc/alice-happy.png',
-        cheer: './npc/alice-happy.png',
-        thinking: './npc/alice-thinking.png',
-        sleepy: './npc/alice-thinking.png',
+        normal: './npc/momo-normal.png',
+        happy: './npc/momo-happy.png',
+        cheer: './npc/momo-cheer.png',
+        thinking: './npc/momo-thinking.png',
+        sleepy: './npc/momo-sleepy.png',
       },
     },
   },
@@ -155,6 +155,35 @@ export function loadNpcConfig(): NpcConfig {
     const raw = localStorage.getItem(NPC_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_NPC_CONFIG, expressions: { ...DEFAULT_NPC_CONFIG.expressions } };
     const parsed = JSON.parse(raw) as Partial<NpcConfig>;
+
+    // Migrate retired fantasy_guild / alice sprite preset seamlessly to starry_loft
+    const usesRetiredFantasyGuild =
+      parsed.presetId === 'fantasy_guild' ||
+      parsed.customBgUrl === './npc/bg-guild-hall.jpg' ||
+      Object.values(parsed.expressions ?? {}).some(
+        (url) => typeof url === 'string' && url.includes('./npc/alice-')
+      );
+
+    if (usesRetiredFantasyGuild) {
+      const replacement = NPC_PRESETS[0].config;
+      const migrated: NpcConfig = {
+        ...replacement,
+        name:
+          typeof parsed.name === 'string' && parsed.name.trim() && parsed.name.trim() !== '艾莉丝'
+            ? parsed.name.trim()
+            : replacement.name,
+        title:
+          typeof parsed.title === 'string' &&
+          parsed.title.trim() &&
+          parsed.title.trim() !== '公会首席接待员'
+            ? parsed.title.trim()
+            : replacement.title,
+        expressions: { ...replacement.expressions },
+      };
+      saveNpcConfig(migrated);
+      return migrated;
+    }
+
     return {
       presetId: typeof parsed.presetId === 'string' ? parsed.presetId : undefined,
       name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : DEFAULT_NPC_CONFIG.name,
@@ -871,7 +900,7 @@ export function preloadNpcConfigAssets(
   const primaryExprUrl = config.expressions[priorityExpression] || config.expressions.normal;
   if (primaryExprUrl) priorityUrls.push(primaryExprUrl);
   if (config.displayMode === 'sprite') {
-    priorityUrls.push(config.customBgUrl || './npc/bg-guild-hall.jpg');
+    priorityUrls.push(config.customBgUrl || './npc/bg-starry-loft.jpg');
   }
 
   const secondaryUrls = Array.from(

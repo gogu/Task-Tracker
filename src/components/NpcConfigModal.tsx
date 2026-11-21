@@ -70,12 +70,12 @@ const EXPRESSION_PROMPT_SUFFIXES: Record<NpcExpression, { shortCn: string; promp
 
 const PRESET_PROMPTS = [
   {
-    id: 'fantasy_guild',
-    title: '🏰 奇幻冒险者公会 · 艾莉丝（Alice）',
+    id: 'starry_loft',
+    title: '🌙 星夜手账阁楼 · 小桃（Momo）',
     spritePrompt:
-      "Anime visual novel character sprite, waist-up portrait of a cheerful anime girl adventurer guild receptionist with long honey-blonde hair in a half-up ponytail, warm emerald green eyes, wearing a medieval fantasy guild uniform with burgundy velvet capelet, cream ruffled blouse, brass guild crest brooch, and brown leather belt, character's waist and lower torso flush with the very bottom edge of the canvas, generous headroom above head, crisp clean dark outlines, vibrant anime cel-shaded style, isolated on a pure flat solid chroma key green screen background (#00FF00), no green lighting spill on character, no background scenery, no text, no watermark",
+      "Hand-drawn anime visual novel character sprite, waist-up portrait of a warm cheerful girl with coral-pink bob hair, white bunny and yellow hairpins, round brown-framed glasses, wearing a relaxed charcoal t-shirt and jeans, accompanied by a cute little white kitten perched on her shoulder or open illustrated notebook, character's waist flush with the very bottom edge of the canvas, generous headroom above head, crisp clean dark ink outlines, cozy storybook watercolor shading, isolated on a pure flat solid chroma key green screen background (#00FF00), no green lighting spill on character, no background scenery, no text, no watermark",
     bgPrompt:
-      '16:9 widescreen anime visual novel background art, cozy warm fantasy adventurer guild reception hall interior, grand oak wood counter on sides, glowing hearth fireplace, parchment quest board with pinned maps on stone walls, golden lantern ambient light rays, open central space for character sprite overlay, masterpiece anime background illustration, no people, no characters, no text, no watermark',
+      '16:9 widescreen hand-drawn storybook anime background art, cozy wooden attic study with open balcony overlooking a starry night sky and lush trees, glowing warm hanging lanterns, wooden corkboard with pinned quest sketches and sticky notes, study desk with open journal and feather quill, tall bookshelf, comfy orange sofa and travel backpack, open central composition for character sprite overlay, warm candlelight atmosphere, no people, no characters, no text, no watermark',
   },
   {
     id: 'cyber_tavern',
