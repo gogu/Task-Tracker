@@ -20,8 +20,12 @@
 html,
 body,
 #root {
+  height: 100%;
   overflow-x: hidden;
   max-width: 100vw;
+  background-color: #120c08;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 @media (min-width: 1600px) {
@@ -148,13 +152,15 @@ body,
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background-color 140ms ease;
 }
 
-.guild-choice-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.18);
+@media (hover: hover) {
+  .guild-choice-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.18);
+  }
 }
 
 .guild-choice-btn:active {
-  transform: translateY(0px) scale(0.99);
+  transform: translateY(0px) scale(0.985);
 }
 
 .guild-surface {

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TaskProvider } from './context/TaskContext';
 import { KanbanView } from './components/KanbanView';
 import { QuickCheckInModal } from './components/QuickCheckInModal';
@@ -13,16 +13,41 @@ import { LocalSyncModal } from './components/LocalSyncModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { Toast } from './components/Toast';
 
+const detectStandalonePwa = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
+  );
+};
+
 const AppContent: React.FC = () => {
+  const [isStandalonePwa, setIsStandalonePwa] = useState<boolean>(detectStandalonePwa);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState<boolean>(false);
+
   useEffect(() => {
     document.documentElement.classList.add('overflow-hidden');
     document.body.classList.add('overflow-hidden');
 
+    const standaloneMedia =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(display-mode: standalone)')
+        : null;
+    const handleStandaloneChange = () => {
+      setIsStandalonePwa(detectStandalonePwa());
+    };
+    standaloneMedia?.addEventListener?.('change', handleStandaloneChange);
+
     let delayedSyncTimer: number | undefined;
     const syncViewportHeight = () => {
-      const vh = window.visualViewport?.height ?? window.innerHeight;
-      if (vh > 0) {
-        document.documentElement.style.setProperty('--app-height', `${Math.round(vh)}px`);
+      const innerH = window.innerHeight;
+      const vvH = window.visualViewport?.height ?? innerH;
+      const keyboardOpen = innerH - vvH > 120;
+      setIsKeyboardOpen(keyboardOpen);
+      if (keyboardOpen && vvH > 0) {
+        document.documentElement.style.setProperty('--app-height', `${Math.round(vvH)}px`);
+      } else {
+        document.documentElement.style.removeProperty('--app-height');
       }
     };
 
@@ -45,6 +70,7 @@ const AppContent: React.FC = () => {
 
     return () => {
       window.clearTimeout(delayedSyncTimer);
+      standaloneMedia?.removeEventListener?.('change', handleStandaloneChange);
       vv?.removeEventListener('resize', scheduleSync);
       vv?.removeEventListener('scroll', syncViewportHeight);
       window.removeEventListener('resize', scheduleSync);
@@ -60,18 +86,21 @@ const AppContent: React.FC = () => {
 
   return (
     <div
-      className="w-full max-w-[100vw] overflow-hidden bg-[#120c08] text-amber-50 flex flex-col antialiased"
-      style={{
-        height: 'var(--app-height, 100dvh)',
-        maxHeight: 'var(--app-height, 100dvh)',
-        paddingTop: 'env(safe-area-inset-top, 0px)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        paddingLeft: 'env(safe-area-inset-left, 0px)',
-        paddingRight: 'env(safe-area-inset-right, 0px)',
-      }}
+      className="fixed inset-x-0 top-0 w-full max-w-[100vw] overflow-hidden bg-[#120c08] text-amber-50 flex flex-col antialiased"
+      style={
+        isKeyboardOpen
+          ? { height: 'var(--app-height, 100dvh)', maxHeight: 'var(--app-height, 100dvh)' }
+          : { bottom: 0 }
+      }
     >
-      <main className="max-w-[1440px] w-full h-full mx-auto p-1 sm:p-2 xl:p-3 flex flex-col min-w-0 min-h-0 overflow-hidden">
-        <KanbanView />
+      <main
+        className={
+          isStandalonePwa
+            ? 'w-full h-full flex flex-col min-w-0 min-h-0 overflow-hidden'
+            : 'w-full h-full mx-auto flex flex-col min-w-0 min-h-0 overflow-hidden xl:max-w-[1440px] xl:p-3'
+        }
+      >
+        <KanbanView isStandalonePwa={isStandalonePwa} />
       </main>
 
       {/* Global Modals & Notifications */}

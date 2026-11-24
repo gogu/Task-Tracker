@@ -42,6 +42,7 @@ import {
   SkipForward,
   RotateCcw,
   Timer,
+  MoreHorizontal,
 } from 'lucide-react';
 import {
   TaskItem,
@@ -428,7 +429,9 @@ const PocketWatchDialSvg: React.FC<PocketWatchDialProps> = ({
   );
 };
 
-export const KanbanView: React.FC = () => {
+export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
+  isStandalonePwa = false,
+}) => {
   const {
     viewMode,
     setViewMode,
@@ -483,17 +486,20 @@ export const KanbanView: React.FC = () => {
 
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>(() => {
     if (typeof window === 'undefined') return { width: 1280, height: 800 };
+    const innerH = window.innerHeight;
+    const vvH = window.visualViewport?.height ?? innerH;
     return {
       width: Math.round(window.visualViewport?.width ?? window.innerWidth),
-      height: Math.round(window.visualViewport?.height ?? window.innerHeight),
+      height: Math.round(innerH - vvH > 120 ? vvH : Math.max(innerH, vvH)),
     };
   });
   const isPortraitMode = viewportSize.height > viewportSize.width;
   const isCompactScreen = viewportSize.width < 1024;
   const isPortraitOrCompact = isPortraitMode || isCompactScreen;
-  const isShortLandscape = !isPortraitMode && viewportSize.height <= 780;
+  const isShortLandscape = !isPortraitMode && viewportSize.height <= 860;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   // ── NPC Appearance & Affection State ───────────────────────────────────────
   const [npcConfig, setNpcConfig] = useState<NpcConfig>(() => loadNpcConfig());
@@ -515,6 +521,27 @@ export const KanbanView: React.FC = () => {
   const [showPortraitCompanion, setShowPortraitCompanion] = useState<boolean>(false);
   const [showFilterBar, setShowFilterBar] = useState<boolean>(false);
   const [showAllTagChips, setShowAllTagChips] = useState<boolean>(false);
+  const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowMoreMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showMoreMenu]);
 
   // Keep activeOverlay aligned when viewMode changes externally
   useEffect(() => {
@@ -676,7 +703,9 @@ export const KanbanView: React.FC = () => {
 
     const updateViewport = () => {
       const nextWidth = Math.round(window.visualViewport?.width ?? window.innerWidth);
-      const nextHeight = Math.round(window.visualViewport?.height ?? window.innerHeight);
+      const innerH = window.innerHeight;
+      const vvH = window.visualViewport?.height ?? innerH;
+      const nextHeight = Math.round(innerH - vvH > 120 ? vvH : Math.max(innerH, vvH));
       if (nextWidth <= 0 || nextHeight <= 0) return;
 
       const nextPortrait = nextHeight > nextWidth;
@@ -1227,6 +1256,16 @@ export const KanbanView: React.FC = () => {
     return [latestCheckedTask, ...topTasks.slice(0, MAX_PINNED - 1)];
   }, [prioritizedInProgressTasks, activeInProgressTasks, getLog, todayStr]);
 
+  const pinnedPeriodMatchLabel = useMemo(() => {
+    for (const task of pinnedActiveTasks) {
+      const affinity = taskTimeAffinityMap.get(task.id);
+      if (affinity?.isCurrentPeriodMatch) {
+        return affinity.matchedPeriodLabel ?? affinity.topPeriodLabel ?? null;
+      }
+    }
+    return null;
+  }, [pinnedActiveTasks, taskTimeAffinityMap]);
+
   const sortedAllTags = useMemo(() => {
     return [...allTags].sort((a, b) => {
       const countA = tasks.filter((t) => t.tags.includes(a)).length;
@@ -1317,6 +1356,28 @@ export const KanbanView: React.FC = () => {
   );
 
   const openPomodoroPanel = useCallback(() => {
+    const isAlreadyInPomodoro = activeOverlay === 'none' && dialogueMode === 'pomodoro';
+    const isFromTaskContext =
+      activeOverlay === 'none' &&
+      (dialogueMode === 'inspect_task' || dialogueMode === 'checkin_form') &&
+      selectedTask !== null;
+    const autoBindTask =
+      pomodoroRunState === 'idle' && !isAlreadyInPomodoro && isFromTaskContext
+        ? selectedTask
+        : null;
+
+    if (pomodoroRunState === 'idle' && !isAlreadyInPomodoro) {
+      if (autoBindTask) {
+        setPomodoroTaskId(autoBindTask.id);
+        if (autoBindTask.id !== pomodoroTaskId) {
+          setPomodoroLastWorkSessionId(undefined);
+        }
+      } else {
+        setPomodoroTaskId(null);
+        setPomodoroLastWorkSessionId(undefined);
+      }
+    }
+
     setActiveOverlay('none');
     setViewMode('kanban');
     setDialogueMode('pomodoro');
@@ -1328,13 +1389,28 @@ export const KanbanView: React.FC = () => {
         }还剩 ${formatCountdownMMSS(pomodoroRemainingSeconds)}，保持节奏加油~`,
         pomodoroPhase === 'focus' ? 'happy' : 'sleepy'
       );
+    } else if (autoBindTask) {
+      speak(
+        `欢迎来到「公会番茄怀表」台前！已为你默认绑定委托《${autoBindTask.title}》，默认 25 分钟专注搭配 5 分钟短休，准备好随时开启吧~`,
+        'happy'
+      );
     } else {
       speak(
         `欢迎来到「公会番茄怀表」台前！默认 25 分钟专注搭配 5 分钟短休，每满 4 颗番茄还会解锁一次 15 分钟长休整哦~`,
         'happy'
       );
     }
-  }, [setViewMode, speak, pomodoroRunState, pomodoroPhase, pomodoroRemainingSeconds]);
+  }, [
+    activeOverlay,
+    dialogueMode,
+    selectedTask,
+    pomodoroTaskId,
+    pomodoroRunState,
+    pomodoroPhase,
+    pomodoroRemainingSeconds,
+    setViewMode,
+    speak,
+  ]);
 
   const startPomodoroPhase = useCallback(
     (overridePhase?: PomodoroPhase, overrideMinutes?: number) => {
@@ -2302,7 +2378,7 @@ export const KanbanView: React.FC = () => {
           : 'bg-emerald-400';
 
   const hubChoiceCardPad = isShortLandscape
-    ? 'p-2.5 sm:p-3 rounded-xl'
+    ? 'px-2.5 py-2 sm:px-3 sm:py-2 rounded-xl'
     : 'p-3.5 sm:p-4 rounded-2xl';
 
   const renderCompanionToggle = (tone: 'parchment' | 'dark') => {
@@ -2353,7 +2429,13 @@ export const KanbanView: React.FC = () => {
   };
 
   return (
-    <div className="relative flex flex-col w-full h-full flex-1 min-h-0 rounded-2xl border-2 border-amber-800/70 dark:border-amber-700/50 bg-[#1a130e] shadow-2xl overflow-hidden overflow-x-hidden select-none">
+    <div
+      className={`relative flex flex-col w-full h-full flex-1 min-h-0 bg-[#1a130e] overflow-hidden overflow-x-hidden select-none ${
+        isStandalonePwa
+          ? ''
+          : 'xl:rounded-2xl xl:border-2 xl:border-amber-800/70 dark:xl:border-amber-700/50 xl:shadow-2xl'
+      }`}
+    >
       {/* Hidden JSON Import Input */}
       <input
         ref={fileInputRef}
@@ -2365,26 +2447,34 @@ export const KanbanView: React.FC = () => {
 
       {/* ── Layer 0: Unified Guild Primary Navigation & Top HUD ── */}
       <header
-        className={`relative z-40 bg-[#231811]/95 border-b border-amber-600/40 shrink-0 ${
-          isShortLandscape
-            ? 'px-3 sm:px-5 py-1.5 sm:py-2 space-y-1.5'
-            : 'px-3 sm:px-6 py-2 sm:py-3 space-y-2'
-        }`}
+        className="relative z-40 bg-[#231811] border-b border-amber-600/40 shrink-0"
+        style={{
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingLeft: 'env(safe-area-inset-left, 0px)',
+          paddingRight: 'env(safe-area-inset-right, 0px)',
+        }}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div
+          className={
+            isShortLandscape
+              ? 'px-3 sm:px-4 py-1.5 space-y-1.5'
+              : 'px-3 sm:px-6 py-2 sm:py-2.5 space-y-2'
+          }
+        >
+        <div className="flex flex-wrap items-center justify-between gap-1.5 xl:gap-2">
           {/* Left: Rank Badge, Live Clock/Period & Guild Micro-Stats */}
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <div className="flex items-center gap-1.5 xl:gap-2 flex-wrap min-w-0">
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r ${guildStats.tierColorClass} border shadow-sm`}
-              title={`经验值 ${guildStats.exp} EXP（距下一级还需 ${guildStats.nextLevelExp - guildStats.exp} EXP）`}
+              className={`flex items-center gap-1.5 xl:gap-2 px-2.5 xl:px-3 py-1 xl:py-1.5 rounded-xl bg-gradient-to-r ${guildStats.tierColorClass} border shadow-sm`}
+              title={`Lv.${guildStats.level} ${guildStats.rankTitle} · 经验值 ${guildStats.exp} EXP（距下一级还需 ${guildStats.nextLevelExp - guildStats.exp} EXP）`}
             >
               <Award className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
               <div className="leading-none">
-                <div className="text-xs sm:text-sm font-extrabold tracking-wide flex items-center gap-1.5">
+                <div className="text-xs sm:text-sm font-extrabold tracking-wide flex items-center gap-1.5 whitespace-nowrap">
                   <span>Lv.{guildStats.level}</span>
-                  <span>{guildStats.rankTitle}</span>
+                  <span className="hidden xl:inline">{guildStats.rankTitle}</span>
                 </div>
-                <div className="w-20 sm:w-28 h-1.5 bg-black/25 rounded-full overflow-hidden mt-1">
+                <div className="w-14 sm:w-16 xl:w-28 h-1.5 bg-black/25 rounded-full overflow-hidden mt-1">
                   <div
                     className="h-full bg-white/90 rounded-full transition-all duration-300"
                     style={{ width: `${guildStats.levelProgressPct}%` }}
@@ -2394,13 +2484,13 @@ export const KanbanView: React.FC = () => {
             </div>
 
             <div
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-black/45 border border-amber-500/30 text-xs sm:text-sm text-amber-100"
+              className="flex items-center gap-1.5 px-2 xl:px-3 py-1.5 rounded-xl bg-black/45 border border-amber-500/30 text-xs sm:text-sm text-amber-100 whitespace-nowrap"
               title={`当前时间 ${periodInfo.clockText} · ${periodInfo.label}（${todayStr}）`}
             >
               <span>{periodInfo.icon}</span>
               <span className="font-mono font-bold text-amber-200">{periodInfo.clockText}</span>
-              <span className="hidden sm:inline text-amber-400/50">·</span>
-              <span className="hidden sm:inline text-amber-300 font-bold">{periodInfo.label}</span>
+              <span className="hidden xl:inline text-amber-400/50">·</span>
+              <span className="hidden xl:inline text-amber-300 font-bold">{periodInfo.label}</span>
             </div>
 
             <div className="hidden xl:flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-black/40 border border-amber-500/25 text-xs sm:text-sm text-amber-100">
@@ -2419,30 +2509,30 @@ export const KanbanView: React.FC = () => {
           </div>
 
           {/* Center: Primary Guild Navigation Tabs */}
-          <nav className="flex items-center flex-wrap gap-1.5 bg-black/45 p-1.5 rounded-xl border border-amber-600/35">
+          <nav className="flex items-center flex-wrap lg:flex-nowrap gap-1 xl:gap-1.5 bg-black/45 p-1 xl:p-1.5 rounded-xl border border-amber-600/35 shrink-0">
             <button
               type="button"
               onClick={() => switchSection('none')}
-              className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-extrabold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 xl:px-3.5 py-1.5 min-h-[36px] rounded-lg text-xs xl:text-sm font-extrabold whitespace-nowrap transition-all cursor-pointer ${
                 activeOverlay === 'none'
                   ? 'bg-amber-500 text-amber-950 shadow-sm'
                   : 'text-amber-100/85 hover:text-amber-50 hover:bg-white/10'
               }`}
             >
-              <Home className="w-4 h-4" />
+              <Home className="w-4 h-4 shrink-0" />
               <span>接待大厅</span>
             </button>
 
             <button
               type="button"
               onClick={() => switchSection(activeOverlay === 'ledger' ? 'none' : 'ledger')}
-              className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-extrabold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 xl:px-3.5 py-1.5 min-h-[36px] rounded-lg text-xs xl:text-sm font-extrabold whitespace-nowrap transition-all cursor-pointer ${
                 activeOverlay === 'ledger'
                   ? 'bg-amber-500 text-amber-950 shadow-sm'
                   : 'text-amber-100/85 hover:text-amber-50 hover:bg-white/10'
               }`}
             >
-              <BookOpen className="w-4 h-4" />
+              <BookOpen className="w-4 h-4 shrink-0" />
               <span>委托账本</span>
               <span
                 className={`text-xs font-mono px-1.5 py-0.2 rounded-full ${
@@ -2456,32 +2546,32 @@ export const KanbanView: React.FC = () => {
             <button
               type="button"
               onClick={() => switchSection(activeOverlay === 'gantt' ? 'none' : 'gantt')}
-              className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-extrabold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 xl:px-3.5 py-1.5 min-h-[36px] rounded-lg text-xs xl:text-sm font-extrabold whitespace-nowrap transition-all cursor-pointer ${
                 activeOverlay === 'gantt'
                   ? 'bg-amber-500 text-amber-950 shadow-sm'
                   : 'text-amber-100/85 hover:text-amber-50 hover:bg-white/10'
               }`}
             >
-              <ScrollText className="w-4 h-4" />
+              <ScrollText className="w-4 h-4 shrink-0" />
               <span>时序卷轴</span>
             </button>
 
             <button
               type="button"
               onClick={() => switchSection(activeOverlay === 'stats' ? 'none' : 'stats')}
-              className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-extrabold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 xl:px-3.5 py-1.5 min-h-[36px] rounded-lg text-xs xl:text-sm font-extrabold whitespace-nowrap transition-all cursor-pointer ${
                 activeOverlay === 'stats'
                   ? 'bg-amber-500 text-amber-950 shadow-sm'
                   : 'text-amber-100/85 hover:text-amber-50 hover:bg-white/10'
               }`}
             >
-              <BarChart3 className="w-4 h-4" />
+              <BarChart3 className="w-4 h-4 shrink-0" />
               <span>战绩圣殿</span>
             </button>
           </nav>
 
           {/* Right: Global Actions, Undo/Redo, Sync & NPC Settings */}
-          <div className="flex items-center flex-wrap gap-1.5 grow">
+          <div className="flex items-center flex-wrap justify-end xl:justify-start gap-1.5 xl:grow">
             {restTargetEndMs !== null && (dialogueMode !== 'rest_countdown' || activeOverlay !== 'none') && (
               <button
                 type="button"
@@ -2490,7 +2580,7 @@ export const KanbanView: React.FC = () => {
                   setViewMode('kanban');
                   setDialogueMode('rest_countdown');
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white border border-emerald-300/60 text-xs sm:text-sm font-extrabold shadow-sm animate-pulse cursor-pointer"
+                className="flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 min-h-[36px] rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white border border-emerald-300/60 text-xs sm:text-sm font-extrabold shadow-sm animate-pulse cursor-pointer whitespace-nowrap"
                 title="点击回到事后休息倒计时表盘"
               >
                 <Coffee className="w-4 h-4" />
@@ -2506,7 +2596,7 @@ export const KanbanView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => openPomodoroPanel()}
-                className={`flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl text-white border text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer transition-colors ${
+                className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 min-h-[36px] rounded-xl text-white border text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer transition-colors whitespace-nowrap ${
                   pomodoroPhase === 'focus'
                     ? pomodoroRunState === 'running'
                       ? 'bg-rose-600/95 hover:bg-rose-500 border-rose-300/70 animate-pulse'
@@ -2527,7 +2617,7 @@ export const KanbanView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => openPomodoroPanel()}
-                className={`flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 min-h-[36px] rounded-xl border text-xs sm:text-sm font-bold transition-colors cursor-pointer whitespace-nowrap ${
                   activeOverlay === 'none' && dialogueMode === 'pomodoro'
                     ? 'bg-rose-600/90 text-white border-rose-300/70 shadow-sm'
                     : 'bg-black/40 border-amber-600/30 text-amber-100/90 hover:bg-white/10'
@@ -2535,7 +2625,7 @@ export const KanbanView: React.FC = () => {
                 title="打开公会番茄钟计时器"
               >
                 <span>🍅</span>
-                <span className="hidden sm:inline">番茄钟</span>
+                <span className="hidden xl:inline">番茄钟</span>
                 {pomodoroDailyStats.date === todayStr && pomodoroDailyStats.count > 0 && (
                   <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-rose-500/25 text-rose-200 font-mono">
                     ×{pomodoroDailyStats.count}
@@ -2546,37 +2636,27 @@ export const KanbanView: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => startCreateTask('in_progress')}
-              className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-amber-950 text-xs sm:text-sm font-extrabold shadow-xs transition-colors cursor-pointer"
-              title="向看板娘登记新委托"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span className="hidden sm:inline">新委托</span>
-            </button>
-
-            <button
-              type="button"
               onClick={() => setShowFilterBar((prev) => !prev)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 min-h-[36px] rounded-xl border text-xs sm:text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
                 showFilterBar || hasActiveFilters
                   ? 'bg-amber-500/20 border-amber-400/60 text-amber-200'
                   : 'bg-black/40 border-amber-600/30 text-amber-100/85 hover:bg-white/10'
               }`}
               title="展开/收起搜索与标签筛选"
             >
-              <SlidersHorizontal className="w-4 h-4" />
-              <span className="hidden md:inline">筛选</span>
+              <SlidersHorizontal className="w-4 h-4 shrink-0" />
+              <span className="hidden xl:inline">筛选</span>
               {hasActiveFilters && <span className="w-2 h-2 rounded-full bg-amber-400" />}
             </button>
 
-            {/* Undo / Redo */}
-            <div className="flex items-center gap-1 pl-1.5 border-l border-amber-600/25">
+            {/* Undo / Redo (Desktop xl+) */}
+            <div className="hidden xl:flex items-center gap-1 pl-1.5 border-l border-amber-600/25">
               <button
                 type="button"
                 onClick={undo}
                 disabled={!canUndo}
                 title={canUndo ? `撤销：${lastUndoDescription} (Ctrl+Z)` : '暂无可撤销操作'}
-                className={`p-2 rounded-lg border text-xs sm:text-sm transition-colors ${
+                className={`p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg border text-xs sm:text-sm transition-colors ${
                   canUndo
                     ? 'bg-black/40 border-amber-600/30 text-amber-100 hover:bg-white/10 cursor-pointer'
                     : 'bg-black/20 border-white/5 text-stone-600 cursor-not-allowed'
@@ -2589,7 +2669,7 @@ export const KanbanView: React.FC = () => {
                 onClick={redo}
                 disabled={!canRedo}
                 title={canRedo ? `重做：${lastRedoDescription} (Ctrl+Y)` : '暂无可重做操作'}
-                className={`p-2 rounded-lg border text-xs sm:text-sm transition-colors ${
+                className={`p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg border text-xs sm:text-sm transition-colors ${
                   canRedo
                     ? 'bg-black/40 border-amber-600/30 text-amber-100 hover:bg-white/10 cursor-pointer'
                     : 'bg-black/20 border-white/5 text-stone-600 cursor-not-allowed'
@@ -2611,29 +2691,31 @@ export const KanbanView: React.FC = () => {
                       ? 'GitHub Gist 云端同步管理'
                       : '连接 GitHub Gist 云端同步'
                 }
-                className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+                className="relative flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 min-h-[36px] rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
               >
-                <Cloud className="w-4 h-4 text-sky-400" />
-                <span className="hidden lg:inline">云同步</span>
-                <span className={`w-2 h-2 rounded-full ${driveDotClass}`} />
+                <Cloud className="w-4 h-4 text-sky-400 shrink-0" />
+                <span className="hidden min-[1140px]:inline">云同步</span>
+                <span className={`w-2 h-2 rounded-full shrink-0 ${driveDotClass}`} />
               </button>
 
-              <button
-                type="button"
-                onClick={() => setLocalSyncModalOpen(true)}
-                title="本地目录实时同步管理"
-                className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
-              >
-                <FolderSync className="w-4 h-4 text-amber-300" />
-                <span className="hidden lg:inline">本地</span>
-                <span className={`w-2 h-2 rounded-full ${localDotClass}`} />
-              </button>
+              {localSync.supported && (
+                <button
+                  type="button"
+                  onClick={() => setLocalSyncModalOpen(true)}
+                  title="本地目录实时同步管理"
+                  className="hidden xl:flex relative items-center gap-1.5 px-2.5 xl:px-3 py-1.5 min-h-[36px] rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <FolderSync className="w-4 h-4 text-amber-300" />
+                  <span>本地</span>
+                  <span className={`w-2 h-2 rounded-full ${localDotClass}`} />
+                </button>
+              )}
 
               <button
                 type="button"
                 onClick={exportData}
                 title="导出 JSON 备份"
-                className="p-2 rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100/85 hover:text-amber-50 transition-colors cursor-pointer"
+                className="hidden xl:inline-flex items-center justify-center p-2 min-h-[36px] min-w-[36px] rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100/85 hover:text-amber-50 transition-colors cursor-pointer"
               >
                 <Download className="w-4 h-4" />
               </button>
@@ -2642,7 +2724,7 @@ export const KanbanView: React.FC = () => {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 title="导入 JSON 备份"
-                className="p-2 rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100/85 hover:text-amber-50 transition-colors cursor-pointer"
+                className="hidden xl:inline-flex items-center justify-center p-2 min-h-[36px] min-w-[36px] rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100/85 hover:text-amber-50 transition-colors cursor-pointer"
               >
                 <Upload className="w-4 h-4" />
               </button>
@@ -2652,17 +2734,135 @@ export const KanbanView: React.FC = () => {
             <button
               type="button"
               onClick={() => setNpcModalOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 p-2 xl:px-3 xl:py-1.5 min-h-[36px] min-w-[36px] justify-center rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
               title="自定义看板娘名字、预设与立绘"
             >
-              <Settings className="w-4 h-4 text-amber-300" />
+              <Settings className="w-4 h-4 text-amber-300 shrink-0" />
               <span className="hidden xl:inline">看板娘</span>
             </button>
+
+            {/* Compact / Tablet "More" Menu (Undo/Redo, Export/Import, Local Sync, v1) */}
+            <div ref={moreMenuRef} className="relative xl:hidden">
+              <button
+                type="button"
+                onClick={() => setShowMoreMenu((prev) => !prev)}
+                aria-label="更多操作"
+                aria-expanded={showMoreMenu}
+                title="更多操作（撤销、备份、旧版等）"
+                className={`flex items-center justify-center p-2 min-h-[36px] min-w-[36px] rounded-lg border transition-colors cursor-pointer ${
+                  showMoreMenu
+                    ? 'bg-amber-500/25 border-amber-400/70 text-amber-200'
+                    : 'bg-black/40 hover:bg-white/10 border-amber-600/30 text-amber-100'
+                }`}
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+
+              {showMoreMenu && (
+                <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl bg-[#231811] border border-amber-500/45 shadow-2xl p-1.5 z-50 flex flex-col gap-0.5 text-xs sm:text-sm text-amber-100">
+                  <button
+                    type="button"
+                    disabled={!canUndo}
+                    onClick={() => {
+                      undo();
+                      setShowMoreMenu(false);
+                    }}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 min-h-[36px] rounded-lg text-left transition-colors ${
+                      canUndo
+                        ? 'hover:bg-white/10 text-amber-100 cursor-pointer'
+                        : 'text-stone-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Undo2 className="w-4 h-4 shrink-0" />
+                      <span className="truncate">
+                        {canUndo && lastUndoDescription ? `撤销：${lastUndoDescription}` : '撤销'}
+                      </span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!canRedo}
+                    onClick={() => {
+                      redo();
+                      setShowMoreMenu(false);
+                    }}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 min-h-[36px] rounded-lg text-left transition-colors ${
+                      canRedo
+                        ? 'hover:bg-white/10 text-amber-100 cursor-pointer'
+                        : 'text-stone-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Redo2 className="w-4 h-4 shrink-0" />
+                      <span className="truncate">
+                        {canRedo && lastRedoDescription ? `重做：${lastRedoDescription}` : '重做'}
+                      </span>
+                    </span>
+                  </button>
+
+                  <div className="border-t border-amber-600/25 my-1" />
+
+                  {localSync.supported && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLocalSyncModalOpen(true);
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 min-h-[36px] rounded-lg hover:bg-white/10 text-left cursor-pointer transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <FolderSync className="w-4 h-4 text-amber-300 shrink-0" />
+                        <span>本地目录同步</span>
+                      </span>
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${localDotClass}`} />
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      exportData();
+                      setShowMoreMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 min-h-[36px] rounded-lg hover:bg-white/10 text-left cursor-pointer transition-colors"
+                  >
+                    <Download className="w-4 h-4 text-emerald-300 shrink-0" />
+                    <span>导出 JSON 备份</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 min-h-[36px] rounded-lg hover:bg-white/10 text-left cursor-pointer transition-colors"
+                  >
+                    <Upload className="w-4 h-4 text-purple-300 shrink-0" />
+                    <span>导入 JSON 备份</span>
+                  </button>
+
+                  <div className="border-t border-amber-600/25 my-1" />
+
+                  <a
+                    href="./v1/"
+                    onClick={() => setShowMoreMenu(false)}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 min-h-[36px] rounded-lg hover:bg-white/10 text-amber-200/80 hover:text-amber-100 transition-colors"
+                  >
+                    <span>切换旧版界面</span>
+                    <span className="text-xs font-mono text-amber-300/70">v1 →</span>
+                  </a>
+                </div>
+              )}
+            </div>
 
             <a
               href="./v1/"
               title="切换访问旧版界面 (/v1/)"
-              className="ml-auto px-2 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-mono text-amber-200/50 hover:text-amber-100 hover:bg-white/5 border border-transparent hover:border-amber-600/25 transition-colors"
+              className="hidden xl:inline-flex xl:ml-auto items-center justify-center px-2 py-1.5 min-h-[36px] rounded-lg text-[11px] sm:text-xs font-mono text-amber-200/50 hover:text-amber-100 hover:bg-white/5 border border-transparent hover:border-amber-600/25 transition-colors"
             >
               v1
             </a>
@@ -2741,6 +2941,7 @@ export const KanbanView: React.FC = () => {
             </div>
           </div>
         )}
+        </div>
       </header>
 
       {/* ── Layer 1: Dynamic Center Reception / Left-Right Split Interactive Stage ── */}
@@ -2835,73 +3036,97 @@ export const KanbanView: React.FC = () => {
                 onClick={(e) => e.stopPropagation()}
                 className={`hidden md:flex flex-col absolute z-20 cursor-default ${
                   isShortLandscape
-                    ? 'top-2.5 left-3 w-64 sm:w-72 gap-1'
-                    : 'top-4 left-4 sm:top-6 sm:left-6 w-72 sm:w-80 gap-2'
+                    ? 'top-2.5 left-3 w-64 sm:w-[272px]'
+                    : 'top-4 left-4 sm:top-6 sm:left-6 w-72 sm:w-80'
                 }`}
+                style={{
+                  maxHeight: isShortLandscape
+                    ? 'calc(100% - 214px - env(safe-area-inset-bottom, 0px))'
+                    : 'calc(100% - 280px)',
+                }}
               >
-                <div className="flex items-center justify-between px-1.5">
-                  <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-200 drop-shadow">
+                <div className="flex items-center justify-between gap-2 px-1.5 shrink-0 mb-1.5">
+                  <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-200 drop-shadow truncate">
                     📌 当前攻略中 ({activeInProgressTasks.length})
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveLedgerTab('in_progress');
-                      switchSection('ledger');
-                    }}
-                    className="text-xs text-amber-300/90 hover:text-amber-100 underline cursor-pointer"
-                  >
-                    全部 →
-                  </button>
-                </div>
-                {pinnedActiveTasks.map((task) => {
-                  const cat = getQuestCategoryBadge(task.tags);
-                  const todayLog = getLog(task.id, todayStr);
-                  const affinity = taskTimeAffinityMap.get(task.id);
-                  return (
-                    <div
-                      key={task.id}
-                      onClick={() => openInspectTask(task)}
-                      className={`rounded-xl bg-black/65 hover:bg-black/85 border border-amber-500/40 hover:border-amber-400/80 backdrop-blur-md text-amber-50 flex items-center justify-between gap-2 cursor-pointer transition-all shadow-lg ${
-                        isShortLandscape ? 'px-3 py-1.5' : 'px-3.5 py-2'
-                      }`}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isShortLandscape && pinnedPeriodMatchLabel && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-200 border border-amber-400/35 font-bold whitespace-nowrap"
+                        title={`⚡ 标记委托常在当前「${pinnedPeriodMatchLabel}」时段推进`}
+                      >
+                        ⚡ {pinnedPeriodMatchLabel}常推
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveLedgerTab('in_progress');
+                        switchSection('ledger');
+                      }}
+                      className="text-xs text-amber-300/90 hover:text-amber-100 underline cursor-pointer whitespace-nowrap"
                     >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="text-base shrink-0">{cat.icon}</span>
-                        <span className="text-xs sm:text-sm font-bold truncate">{task.title}</span>
+                      全部 →
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className={`flex flex-col overflow-y-auto no-scrollbar min-h-0 pr-0.5 ${
+                    isShortLandscape ? 'gap-1' : 'gap-2'
+                  }`}
+                >
+                  {pinnedActiveTasks.map((task) => {
+                    const cat = getQuestCategoryBadge(task.tags);
+                    const todayLog = getLog(task.id, todayStr);
+                    const affinity = taskTimeAffinityMap.get(task.id);
+                    return (
+                      <div
+                        key={task.id}
+                        onClick={() => openInspectTask(task)}
+                        className={`shrink-0 min-h-[38px] rounded-xl bg-black/65 hover:bg-black/85 border border-amber-500/40 hover:border-amber-400/80 backdrop-blur-md text-amber-50 flex items-center justify-between gap-2 cursor-pointer transition-all shadow-lg ${
+                          isShortLandscape ? 'px-2.5 py-1.5' : 'px-3.5 py-2'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="text-base shrink-0">{cat.icon}</span>
+                          <span className="text-xs sm:text-sm font-bold truncate">{task.title}</span>
+                        </div>
+                        {affinity?.isCurrentPeriodMatch && (
+                          <span
+                            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md bg-amber-400/20 text-amber-200 border border-amber-400/35 font-bold"
+                            title={`以往常在「${affinity.matchedPeriodLabel ?? affinity.topPeriodLabel}」时段攻略此委托${
+                              affinity.currentPeriodSessions > 0
+                                ? `（该时段累计 ${affinity.currentPeriodSessions} 次 · ${formatHours(
+                                    affinity.currentPeriodHours
+                                  )}）`
+                                : ''
+                            }`}
+                          >
+                            {isShortLandscape
+                              ? '⚡'
+                              : `⚡ ${affinity.matchedPeriodLabel ?? affinity.topPeriodLabel}常推`}
+                          </span>
+                        )}
+                        {todayLog ? (
+                          <span className="shrink-0 text-xs px-2 py-0.5 rounded-md bg-emerald-500/25 text-emerald-300 border border-emerald-400/45 font-bold">
+                            ✓ 已报
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCheckInForTask(task, todayStr);
+                            }}
+                            className="shrink-0 text-xs px-2.5 py-1 min-h-[30px] rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-amber-950 font-extrabold transition-all cursor-pointer"
+                          >
+                            打卡
+                          </button>
+                        )}
                       </div>
-                      {affinity?.isCurrentPeriodMatch && (
-                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md bg-amber-400/20 text-amber-200 border border-amber-400/35 font-bold"
-                          title={`以往常在「${affinity.matchedPeriodLabel ?? affinity.topPeriodLabel}」时段攻略此委托${
-                            affinity.currentPeriodSessions > 0
-                              ? `（该时段累计 ${affinity.currentPeriodSessions} 次 · ${formatHours(
-                                  affinity.currentPeriodHours
-                                )}）`
-                              : ''
-                          }`}
-                        >
-                          ⚡ {affinity.matchedPeriodLabel ?? affinity.topPeriodLabel}常推
-                        </span>
-                      )}
-                      {todayLog ? (
-                        <span className="shrink-0 text-xs px-2 py-0.5 rounded-md bg-emerald-500/25 text-emerald-300 border border-emerald-400/45 font-bold">
-                          ✓ 已报
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openCheckInForTask(task, todayStr);
-                          }}
-                          className="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-amber-950 font-extrabold transition-colors cursor-pointer"
-                        >
-                          打卡
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -2948,11 +3173,18 @@ export const KanbanView: React.FC = () => {
 
             {/* Shared Portrait Stage (decoupled fixed frame anchored behind the dialogue top edge so transitions & dialogue height never shift or float the sprite) */}
             <div
-              className={`absolute inset-x-0 top-2 sm:top-3 z-10 pointer-events-none overflow-hidden ${
+              className={`absolute inset-x-0 z-10 pointer-events-none overflow-hidden ${
                 isSplitStage && isPortraitOrCompact
-                  ? 'bottom-[78px]'
-                  : 'bottom-[176px] sm:bottom-[188px] xl:bottom-[198px]'
+                  ? 'top-2 sm:top-3 bottom-[78px]'
+                  : !isSplitStage && isShortLandscape
+                    ? 'top-1.5 sm:top-2'
+                    : 'top-2 sm:top-3 bottom-[176px] sm:bottom-[188px] xl:bottom-[198px]'
               }`}
+              style={
+                !isSplitStage && isShortLandscape
+                  ? { bottom: 'calc(168px + env(safe-area-inset-bottom, 0px))' }
+                  : undefined
+              }
             >
               {activeImgFailed ? (
                 <div className="w-full h-full flex flex-col items-center justify-center text-amber-100/80 p-4 text-center">
@@ -2976,7 +3208,11 @@ export const KanbanView: React.FC = () => {
                 npcConfig.displayMode === 'sprite' && (
                   <div
                     className={`w-full h-full ${
-                      isSplitStage && isPortraitOrCompact ? 'pt-3 sm:pt-3' : 'pt-6 sm:pt-4'
+                      isSplitStage && isPortraitOrCompact
+                        ? 'pt-3 sm:pt-3'
+                        : isShortLandscape
+                          ? 'pt-2'
+                          : 'pt-6 sm:pt-4'
                     }`}
                   >
                     <div className="relative w-full h-full">
@@ -3014,10 +3250,15 @@ export const KanbanView: React.FC = () => {
               <div
                 onClick={(e) => e.stopPropagation()}
                 className={`relative mt-auto shrink-0 z-20 flex justify-center cursor-default max-h-full ${
-                  isShortLandscape ? 'px-3 sm:px-6 pb-2.5 pt-5' : 'px-3 sm:px-8 pb-3 sm:pb-6 pt-5'
+                  isShortLandscape ? 'px-3 sm:px-5 pt-4' : 'px-3 sm:px-8 pt-5'
                 }`}
+                style={{
+                  paddingBottom: isShortLandscape
+                    ? 'calc(0.625rem + env(safe-area-inset-bottom, 0px))'
+                    : 'calc(1.25rem + env(safe-area-inset-bottom, 0px))',
+                }}
               >
-                <div className="relative w-full max-w-4xl xl:max-w-5xl max-h-full flex flex-col">
+                <div className="relative w-full max-w-5xl max-h-full flex flex-col">
                   {/* Nameplate & Affection Pill (kept outside scroll container so it never clips) */}
                   <div className="absolute -top-3.5 left-4 right-4 sm:left-6 sm:right-6 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
                     <div className="flex items-center gap-2 pointer-events-auto">
@@ -3055,10 +3296,10 @@ export const KanbanView: React.FC = () => {
                   </div>
 
                   <div
-                    className={`w-full overflow-y-auto overscroll-contain bg-[#18120e]/92 backdrop-blur-md border-2 border-amber-500/70 rounded-3xl shadow-[0_24px_64px_rgba(0,0,0,0.8)] text-amber-50 ${
+                    className={`w-full overflow-y-auto overscroll-contain bg-[#18120e]/92 backdrop-blur-md border-2 border-amber-500/70 shadow-[0_24px_64px_rgba(0,0,0,0.8)] text-amber-50 ${
                       isShortLandscape
-                        ? 'px-4 pt-4 pb-3 sm:px-5'
-                        : 'p-4 pt-5 sm:p-5 sm:pt-6 xl:p-6 xl:pt-6'
+                        ? 'px-3.5 pt-7 pb-2.5 sm:px-4 rounded-2xl'
+                        : 'p-4 pt-5 sm:p-5 sm:pt-6 xl:p-6 xl:pt-6 rounded-3xl'
                     }`}
                   >
                     {/* Large Readable Dialogue Text (pre-sized to prevent layout shift during typing) */}
@@ -3068,7 +3309,7 @@ export const KanbanView: React.FC = () => {
                       }}
                       className={`grid text-amber-50 font-medium cursor-pointer ${
                         isShortLandscape
-                          ? 'text-sm sm:text-base leading-snug min-h-[2.4rem] mt-0.5 mb-2.5'
+                          ? 'text-sm sm:text-[15px] leading-snug min-h-[1.6rem] mt-0.5 mb-2'
                           : 'text-base sm:text-lg xl:text-xl leading-relaxed min-h-[3.2rem] mt-1 mb-3.5'
                       }`}
                     >
@@ -3089,22 +3330,24 @@ export const KanbanView: React.FC = () => {
                     {/* 6 Large RPG Choice Cards */}
                     <div
                       className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${
-                        isShortLandscape ? 'gap-2' : 'gap-2.5'
+                        isShortLandscape ? 'gap-1.5' : 'gap-2.5'
                       }`}
                     >
                       <button
                         type="button"
                         onClick={startCheckInFlow}
-                        className={`guild-choice-btn ${hubChoiceCardPad} bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-amber-950 border border-amber-200/80 shadow-lg text-left flex items-start gap-3 cursor-pointer`}
+                        className={`guild-choice-btn ${hubChoiceCardPad} bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-amber-950 border border-amber-200/80 shadow-lg text-left flex cursor-pointer ${
+                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                        }`}
                       >
-                        <div className="p-2 rounded-xl bg-black/15 shrink-0">
-                          <CheckCircle2 className="w-5 h-5" />
+                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-black/15 shrink-0`}>
+                          <CheckCircle2 className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm sm:text-base font-extrabold leading-tight">
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
                             汇报今日进度
                           </div>
-                          <div className="text-xs text-amber-950/80 font-semibold mt-1 truncate">
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-950/80 font-semibold truncate`}>
                             今日已报 {guildStats.todayCheckedCount} 项 · 攻略中 {guildStats.inProgressCount} 项
                           </div>
                         </div>
@@ -3113,16 +3356,18 @@ export const KanbanView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => switchSection('ledger')}
-                        className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex items-start gap-3 cursor-pointer`}
+                        className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex cursor-pointer ${
+                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                        }`}
                       >
-                        <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 shrink-0">
-                          <BookOpen className="w-5 h-5" />
+                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-amber-500/20 text-amber-300 shrink-0`}>
+                          <BookOpen className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm sm:text-base font-extrabold leading-tight">
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
                             翻阅委托账本
                           </div>
-                          <div className="text-xs text-amber-200/75 mt-1 truncate">
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/75 truncate`}>
                             共 {filteredTasks.length} 份委托 · 四状态分类管理
                           </div>
                         </div>
@@ -3131,16 +3376,18 @@ export const KanbanView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => startCreateTask('in_progress')}
-                        className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex items-start gap-3 cursor-pointer`}
+                        className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex cursor-pointer ${
+                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                        }`}
                       >
-                        <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300 shrink-0">
-                          <Plus className="w-5 h-5" />
+                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-emerald-500/20 text-emerald-300 shrink-0`}>
+                          <Plus className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm sm:text-base font-extrabold leading-tight">
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
                             登记新的委托
                           </div>
-                          <div className="text-xs text-amber-200/75 mt-1 truncate">
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/75 truncate`}>
                             立项新游戏 / 书籍 / 影视目标
                           </div>
                         </div>
@@ -3149,16 +3396,18 @@ export const KanbanView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => triggerRandomPick()}
-                        className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex items-start gap-3 cursor-pointer`}
+                        className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex cursor-pointer ${
+                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                        }`}
                       >
-                        <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300 shrink-0">
-                          <Dices className="w-5 h-5" />
+                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-purple-500/20 text-purple-300 shrink-0`}>
+                          <Dices className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm sm:text-base font-extrabold leading-tight">
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
                             帮我抽个坑填
                           </div>
-                          <div className="text-xs text-amber-200/75 mt-1 truncate">
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/75 truncate`}>
                             从 {guildStats.backlogCount} 项待接取中随机抽取
                           </div>
                         </div>
@@ -3167,26 +3416,28 @@ export const KanbanView: React.FC = () => {
                       <button
                         type="button"
                         onClick={startStaleReview}
-                        className={`guild-choice-btn ${hubChoiceCardPad} border text-left flex items-start gap-3 cursor-pointer ${
+                        className={`guild-choice-btn ${hubChoiceCardPad} border text-left flex cursor-pointer ${
+                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                        } ${
                           staleList.length > 0
                             ? 'bg-rose-950/75 hover:bg-rose-900/80 text-rose-50 border-rose-400/55'
                             : 'bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border-amber-500/45'
                         }`}
                       >
                         <div
-                          className={`p-2 rounded-xl shrink-0 ${
+                          className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} shrink-0 ${
                             staleList.length > 0
                               ? 'bg-rose-500/25 text-rose-300'
                               : 'bg-amber-500/20 text-amber-300'
                           }`}
                         >
-                          <BellRing className="w-5 h-5" />
+                          <BellRing className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm sm:text-base font-extrabold leading-tight">
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
                             催更巡检
                           </div>
-                          <div className="text-xs text-amber-200/80 mt-1 truncate">
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/80 truncate`}>
                             {staleList.length > 0
                               ? `${staleList.length} 项委托已超 3 天未推进`
                               : '巡检久未推进的攻略中委托'}
@@ -3205,16 +3456,18 @@ export const KanbanView: React.FC = () => {
                             'thinking'
                           );
                         }}
-                        className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex items-start gap-3 cursor-pointer`}
+                        className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex cursor-pointer ${
+                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                        }`}
                       >
-                        <div className="p-2 rounded-xl bg-sky-500/20 text-sky-300 shrink-0">
-                          <Cloud className="w-5 h-5" />
+                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-sky-500/20 text-sky-300 shrink-0`}>
+                          <Cloud className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm sm:text-base font-extrabold leading-tight">
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
                             同步与备份
                           </div>
-                          <div className="text-xs text-amber-200/75 mt-1 truncate">
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/75 truncate`}>
                             GitHub Gist / 本地目录 / JSON 备份
                           </div>
                         </div>
@@ -3231,9 +3484,14 @@ export const KanbanView: React.FC = () => {
                 onClick={(e) => e.stopPropagation()}
                 className={`relative mt-auto shrink-0 z-20 bg-[#18120e]/92 backdrop-blur-md border-2 border-amber-500/70 rounded-2xl shadow-2xl text-amber-50 cursor-default ${
                   isPortraitOrCompact
-                    ? 'mx-2.5 mb-2 p-2.5 sm:p-3'
-                    : 'mx-3 mb-3 sm:mx-4 sm:mb-4 p-3.5 sm:p-4'
+                    ? 'mx-2.5 p-2.5 sm:p-3'
+                    : 'mx-3 sm:mx-4 p-3.5 sm:p-4'
                 }`}
+                style={{
+                  marginBottom: isPortraitOrCompact
+                    ? 'calc(0.5rem + env(safe-area-inset-bottom, 0px))'
+                    : 'calc(0.75rem + env(safe-area-inset-bottom, 0px))',
+                }}
               >
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="flex items-baseline gap-1.5 min-w-0">
@@ -3390,12 +3648,18 @@ export const KanbanView: React.FC = () => {
         {/* ── Right Side Information & Interactive Workspace (Split-Stage Mode) ── */}
         {isSplitStage && (
           <div
-            className={`relative z-10 flex-1 min-w-0 h-full min-h-0 flex flex-col p-1.5 sm:p-3 xl:p-5 overflow-hidden overflow-x-hidden ${
+            className={`relative z-10 flex-1 min-w-0 h-full min-h-0 flex flex-col overflow-hidden overflow-x-hidden ${
               npcConfig.displayMode === 'sprite'
                 ? 'bg-[#140e0a]/65 backdrop-blur-md'
                 : 'bg-[#140e0a]/95'
             }`}
+            style={{
+              paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+              paddingLeft: 'env(safe-area-inset-left, 0px)',
+              paddingRight: 'env(safe-area-inset-right, 0px)',
+            }}
           >
+            <div className="flex-1 min-h-0 flex flex-col p-1.5 sm:p-3 xl:p-5 overflow-hidden overflow-x-hidden">
             {/* OVERLAY A: PARCHMENT QUEST LEDGER */}
             {activeOverlay === 'ledger' && (
               <div className="flex-1 min-h-0 guild-parchment rounded-2xl border-2 border-amber-700/60 dark:border-amber-600/50 shadow-2xl flex flex-col overflow-hidden overflow-x-hidden">
@@ -5863,6 +6127,7 @@ export const KanbanView: React.FC = () => {
                 </div>
               </div>
             )}
+            </div>
           </div>
         )}
       </div>
