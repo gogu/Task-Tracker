@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BookOpen,
   Settings,
@@ -42,6 +43,7 @@ import {
   SkipForward,
   RotateCcw,
   Timer,
+  PictureInPicture2,
   MoreHorizontal,
 } from 'lucide-react';
 import {
@@ -93,6 +95,8 @@ import { NpcConfigModal } from './NpcConfigModal';
 import { GanttView } from './GanttView';
 import { StatsView } from './StatsView';
 import { TaskDetailDrawer } from './TaskDetailDrawer';
+import { usePomodoroPip } from '../hooks/usePomodoroPip';
+import { PomodoroPipClock, PomodoroPipCompletedNotice } from './PomodoroPipClock';
 
 type OverlayMode = 'none' | 'ledger' | 'gantt' | 'stats';
 
@@ -666,6 +670,33 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
   const [isDraggingPomodoroDial, setIsDraggingPomodoroDial] = useState<boolean>(false);
   const pomodoroDialSvgRef = useRef<SVGSVGElement | null>(null);
   const pomodoroCompletedGuardRef = useRef<boolean>(false);
+  const [pipCompletedNotice, setPipCompletedNotice] = useState<PomodoroPipCompletedNotice | null>(
+    null
+  );
+
+  const {
+    isPipOpen,
+    pipWindow,
+    pipContainer,
+    closePip,
+    togglePip,
+  } = usePomodoroPip({
+    width: 240,
+    height: 220,
+    onOpen: () => setPipCompletedNotice(null),
+    onClose: () => setPipCompletedNotice(null),
+    onUnsupported: () =>
+      showToast('当前浏览器不支持小窗置顶，请使用桌面版 Chrome 或 Edge', 'info'),
+  });
+
+  const handleReturnFromPip = useCallback(() => {
+    window.focus();
+    setActiveOverlay('none');
+    setViewMode('kanban');
+    setDialogueMode('pomodoro');
+    setPipCompletedNotice(null);
+    closePip();
+  }, [setViewMode, closePip]);
 
   // ── Inline Create / Edit Task Form State ───────────────────────────────────
   const [formTitle, setFormTitle] = useState('');
@@ -1333,6 +1364,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
         return;
       }
       pomodoroCompletedGuardRef.current = true;
+      setPipCompletedNotice(null);
       setPomodoroRunState('idle');
       setPomodoroTargetEndMs(null);
       setPomodoroStartedAtMs(null);
@@ -1445,6 +1477,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
       setPomodoroTargetEndMs(nowMs + safeMins * 60_000);
       setPomodoroRunState('running');
       setPomodoroLastSummary(null);
+      setPipCompletedNotice(null);
 
       if (targetPhase === 'focus') {
         speak(
@@ -1500,6 +1533,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
 
   const resetPomodoro = useCallback(() => {
     pomodoroCompletedGuardRef.current = true;
+    setPipCompletedNotice(null);
     setPomodoroRunState('idle');
     setPomodoroTargetEndMs(null);
     setPomodoroStartedAtMs(null);
@@ -1621,6 +1655,14 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
           endTime: endStr,
           autoRecorded: didAutoRecord,
         });
+        if (isPipOpen) {
+          setPipCompletedNotice({
+            phase: 'focus',
+            minutes: actualMinutes,
+            taskTitle: pomodoroBoundTask?.title,
+            autoRecorded: didAutoRecord,
+          });
+        }
 
         speak(
           isLongBreakTurn
@@ -1659,6 +1701,14 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
           endTime: endStr,
           autoRecorded: Boolean(pomodoroBoundTask),
         });
+        if (isPipOpen) {
+          setPipCompletedNotice({
+            phase: pomodoroPhase,
+            minutes: actualMinutes,
+            taskTitle: pomodoroBoundTask?.title,
+            autoRecorded: Boolean(pomodoroBoundTask),
+          });
+        }
 
         speak(
           `休整时间到啦（共休息 ${actualMinutes} 分钟）~ 表盘已为你复位回 ${pomodoroFocusMinutes} 分钟专注模式，随时可以开启下一轮番茄冲刺！`,
@@ -1684,6 +1734,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
       pomodoroLongBreakMinutes,
       pomodoroShortBreakMinutes,
       pomodoroFocusMinutes,
+      isPipOpen,
       showToast,
       speak,
     ]
@@ -1701,8 +1752,26 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
     };
     tick();
     const timer = window.setInterval(tick, 250);
-    return () => window.clearInterval(timer);
-  }, [pomodoroRunState, pomodoroTargetEndMs, completePomodoroPhase]);
+    const pipTimer =
+      pipWindow && !pipWindow.closed ? pipWindow.setInterval(tick, 250) : undefined;
+    return () => {
+      window.clearInterval(timer);
+      if (pipTimer !== undefined && pipWindow && !pipWindow.closed) {
+        pipWindow.clearInterval(pipTimer);
+      }
+    };
+  }, [pomodoroRunState, pomodoroTargetEndMs, completePomodoroPhase, pipWindow]);
+
+  // Sync Document Picture-in-Picture window title
+  useEffect(() => {
+    if (!pipWindow || pipWindow.closed) return;
+    if (pipCompletedNotice && pomodoroRunState === 'idle') {
+      pipWindow.document.title = '🎉 计时结束 · 时序公会';
+      return;
+    }
+    const icon = pomodoroPhase === 'focus' ? '🍅' : '☕';
+    pipWindow.document.title = `${icon} ${formatCountdownMMSS(pomodoroRemainingSeconds)} · 时序公会`;
+  }, [pipWindow, pipCompletedNotice, pomodoroRunState, pomodoroPhase, pomodoroRemainingSeconds]);
 
   // ── Primary Navigation Switching ───────────────────────────────────────────
   const switchSection = (next: OverlayMode) => {
@@ -2593,26 +2662,40 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
 
             {pomodoroRunState !== 'idle' &&
             (dialogueMode !== 'pomodoro' || activeOverlay !== 'none') ? (
-              <button
-                type="button"
-                onClick={() => openPomodoroPanel()}
-                className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 min-h-[36px] rounded-xl text-white border text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer transition-colors whitespace-nowrap ${
-                  pomodoroPhase === 'focus'
-                    ? pomodoroRunState === 'running'
-                      ? 'bg-rose-600/95 hover:bg-rose-500 border-rose-300/70 animate-pulse'
-                      : 'bg-amber-700/90 hover:bg-amber-600 border-amber-300/60'
-                    : pomodoroRunState === 'running'
-                      ? 'bg-emerald-600/95 hover:bg-emerald-500 border-emerald-300/70 animate-pulse'
-                      : 'bg-teal-700/90 hover:bg-teal-600 border-teal-300/60'
-                }`}
-                title="点击打开番茄钟倒计时面板"
-              >
-                <span>{pomodoroPhase === 'focus' ? '🍅' : '☕'}</span>
-                <span className="font-mono">{formatCountdownMMSS(pomodoroRemainingSeconds)}</span>
-                {pomodoroRunState === 'paused' && (
-                  <span className="text-[10px] px-1 py-0.5 rounded bg-black/25">暂停</span>
-                )}
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => openPomodoroPanel()}
+                  className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 min-h-[36px] rounded-xl text-white border text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer transition-colors whitespace-nowrap ${
+                    pomodoroPhase === 'focus'
+                      ? pomodoroRunState === 'running'
+                        ? 'bg-rose-600/95 hover:bg-rose-500 border-rose-300/70 animate-pulse'
+                        : 'bg-amber-700/90 hover:bg-amber-600 border-amber-300/60'
+                      : pomodoroRunState === 'running'
+                        ? 'bg-emerald-600/95 hover:bg-emerald-500 border-emerald-300/70 animate-pulse'
+                        : 'bg-teal-700/90 hover:bg-teal-600 border-teal-300/60'
+                  }`}
+                  title="点击打开番茄钟倒计时面板"
+                >
+                  <span>{pomodoroPhase === 'focus' ? '🍅' : '☕'}</span>
+                  <span className="font-mono">{formatCountdownMMSS(pomodoroRemainingSeconds)}</span>
+                  {pomodoroRunState === 'paused' && (
+                    <span className="text-[10px] px-1 py-0.5 rounded bg-black/25">暂停</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={togglePip}
+                  className={`p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-xl border text-xs transition-colors cursor-pointer ${
+                    isPipOpen
+                      ? 'bg-amber-500/25 border-amber-300/70 text-amber-100'
+                      : 'bg-black/40 border-amber-600/30 text-amber-100/90 hover:bg-white/10'
+                  }`}
+                  title={isPipOpen ? '收回番茄钟置顶小窗' : '弹出番茄钟置顶小窗'}
+                >
+                  <PictureInPicture2 className="w-4 h-4" />
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
@@ -5286,6 +5369,19 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                               </button>
                             );
                           })}
+                          <button
+                            type="button"
+                            onClick={togglePip}
+                            title={isPipOpen ? '关闭桌面置顶小窗' : '在桌面独立小窗置顶显示时钟'}
+                            className={`px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              isPipOpen
+                                ? 'bg-amber-600 text-white border-amber-500 shadow-sm'
+                                : 'bg-white/75 dark:bg-black/25 text-stone-700 dark:text-amber-100 border-amber-800/20 dark:border-white/15 hover:border-amber-500'
+                            }`}
+                          >
+                            <PictureInPicture2 className="w-4 h-4 shrink-0" />
+                            <span>{isPipOpen ? '收回小窗' : '小窗置顶'}</span>
+                          </button>
                         </div>
                       </div>
 
@@ -6143,6 +6239,22 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
         onSave={handleSaveNpcConfig}
         onReset={handleResetNpcConfig}
       />
+
+      {/* Document Picture-in-Picture Minimal Pomodoro Clock Portal */}
+      {pipContainer &&
+        createPortal(
+          <PomodoroPipClock
+            phase={pomodoroPhase}
+            runState={pomodoroRunState}
+            remainingSeconds={pomodoroRemainingSeconds}
+            totalMinutes={activePomodoroTotalMinutes}
+            targetEndMs={pomodoroTargetEndMs}
+            boundTaskTitle={pomodoroBoundTask?.title ?? null}
+            completedNotice={pipCompletedNotice}
+            onReturnToMain={handleReturnFromPip}
+          />,
+          pipContainer
+        )}
     </div>
   );
 };
