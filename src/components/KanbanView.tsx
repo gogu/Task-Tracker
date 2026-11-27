@@ -52,6 +52,7 @@ import {
   ProgressType,
 } from '../types';
 import { useTaskContext } from '../context/TaskContext';
+import { DurationStepperInput } from './DurationStepperInput';
 import {
   formatDate,
   addDays,
@@ -488,16 +489,22 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
   const yesterdayStr = useMemo(() => addDays(todayStr, -1), [todayStr]);
   const periodInfo = useMemo(() => getTimePeriodInfo(liveNow), [liveNow]);
 
-  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>(() => {
-    if (typeof window === 'undefined') return { width: 1280, height: 800 };
+  const [viewportSize, setViewportSize] = useState<{
+    width: number;
+    height: number;
+    layoutHeight: number;
+  }>(() => {
+    if (typeof window === 'undefined') return { width: 1280, height: 800, layoutHeight: 800 };
     const innerH = window.innerHeight;
     const vvH = window.visualViewport?.height ?? innerH;
+    const layoutHeight = Math.round(Math.max(innerH, vvH));
     return {
       width: Math.round(window.visualViewport?.width ?? window.innerWidth),
-      height: Math.round(innerH - vvH > 120 ? vvH : Math.max(innerH, vvH)),
+      height: Math.round(innerH - vvH > 120 ? vvH : layoutHeight),
+      layoutHeight,
     };
   });
-  const isPortraitMode = viewportSize.height > viewportSize.width;
+  const isPortraitMode = viewportSize.layoutHeight > viewportSize.width;
   const isCompactScreen = viewportSize.width < 1024;
   const isPortraitOrCompact = isPortraitMode || isCompactScreen;
   const isShortLandscape = !isPortraitMode && viewportSize.height <= 860;
@@ -736,10 +743,11 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
       const nextWidth = Math.round(window.visualViewport?.width ?? window.innerWidth);
       const innerH = window.innerHeight;
       const vvH = window.visualViewport?.height ?? innerH;
-      const nextHeight = Math.round(innerH - vvH > 120 ? vvH : Math.max(innerH, vvH));
+      const nextLayoutHeight = Math.round(Math.max(innerH, vvH));
+      const nextHeight = Math.round(innerH - vvH > 120 ? vvH : nextLayoutHeight);
       if (nextWidth <= 0 || nextHeight <= 0) return;
 
-      const nextPortrait = nextHeight > nextWidth;
+      const nextPortrait = nextLayoutHeight > nextWidth;
       if (nextPortrait && !prevPortraitRef.current) {
         // Default portrait split-stage companion to hidden after rotating to portrait
         setShowPortraitCompanion(false);
@@ -747,9 +755,11 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
       prevPortraitRef.current = nextPortrait;
 
       setViewportSize((prev) =>
-        prev.width === nextWidth && prev.height === nextHeight
+        prev.width === nextWidth &&
+        prev.height === nextHeight &&
+        prev.layoutHeight === nextLayoutHeight
           ? prev
-          : { width: nextWidth, height: nextHeight }
+          : { width: nextWidth, height: nextHeight, layoutHeight: nextLayoutHeight }
       );
     };
 
@@ -4804,21 +4814,19 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                           投入时长（小时）
                         </label>
                         <div className="flex flex-wrap items-center gap-2.5">
-                          <div className="relative w-32 shrink-0">
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              max="24"
-                              placeholder="如 1.5"
-                              value={checkInHours}
-                              onChange={(e) => setCheckInHours(e.target.value)}
-                              className="w-full pl-3.5 pr-7 py-2 text-sm sm:text-base font-mono bg-white dark:bg-[#1a140f] border border-amber-800/30 dark:border-amber-600/40 rounded-xl text-stone-900 dark:text-amber-50 focus:outline-none focus:border-amber-500"
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs sm:text-sm font-bold text-stone-500">
-                              h
-                            </span>
-                          </div>
+                          <DurationStepperInput
+                            value={checkInHours}
+                            onChange={setCheckInHours}
+                            step={0.1}
+                            min={0}
+                            max={24}
+                            unit="h"
+                            placeholder="如 1.5"
+                            accent="amber"
+                            variant="guild"
+                            className="w-44 shrink-0"
+                            ariaLabel="投入时长（小时）"
+                          />
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {[0.5, 1.0, 1.5, 2.0, 3.0, 4.0].map((preset) => (
                               <button
@@ -4862,21 +4870,19 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2.5">
-                          <div className="relative w-32 shrink-0">
-                            <input
-                              type="number"
-                              step="1"
-                              min="0"
-                              max="240"
-                              placeholder="如 5"
-                              value={checkInRestMinutes}
-                              onChange={(e) => setCheckInRestMinutes(e.target.value)}
-                              className="w-full pl-3.5 pr-9 py-2 text-sm sm:text-base font-mono bg-white dark:bg-[#1a140f] border border-amber-800/30 dark:border-amber-600/40 rounded-xl text-stone-900 dark:text-amber-50 focus:outline-none focus:border-emerald-500"
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-500">
-                              分钟
-                            </span>
-                          </div>
+                          <DurationStepperInput
+                            value={checkInRestMinutes}
+                            onChange={setCheckInRestMinutes}
+                            step={1}
+                            min={0}
+                            max={240}
+                            unit="分钟"
+                            placeholder="如 5"
+                            accent="emerald"
+                            variant="guild"
+                            className="w-44 shrink-0"
+                            ariaLabel="本次独立休息时间（分钟）"
+                          />
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <button
                               type="button"

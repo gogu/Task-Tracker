@@ -147,14 +147,14 @@ export const TaskModal: React.FC = () => {
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+        className="guild-modal-overlay z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 8 }}
           transition={{ duration: 0.16 }}
-          className="w-full max-w-lg guild-modal-shell rounded-2xl shadow-2xl overflow-hidden overflow-x-hidden max-h-[92vh] overflow-y-auto"
+          className="w-full max-w-lg guild-modal-shell rounded-2xl shadow-2xl overflow-hidden overflow-x-hidden max-h-full overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Modal Header */}

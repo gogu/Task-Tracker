@@ -550,7 +550,7 @@ export const NpcConfigModal: React.FC<NpcConfigModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+        className="guild-modal-overlay z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs"
         onClick={onClose}
       >
         <motion.div
@@ -559,7 +559,7 @@ export const NpcConfigModal: React.FC<NpcConfigModalProps> = ({
           exit={{ opacity: 0, scale: 0.96, y: 10 }}
           transition={{ duration: 0.16 }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-3xl bg-[#fbf6ea] dark:bg-[#1e1915] text-stone-900 dark:text-stone-100 rounded-2xl border-2 border-amber-700/50 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+          className="w-full max-w-3xl bg-[#fbf6ea] dark:bg-[#1e1915] text-stone-900 dark:text-stone-100 rounded-2xl border-2 border-amber-700/50 shadow-2xl overflow-hidden flex flex-col max-h-full"
         >
           {/* Header */}
           <div className="px-5 py-4 border-b border-amber-800/20 dark:border-amber-700/30 bg-[#f4ead1] dark:bg-[#282019] flex items-center justify-between shrink-0">

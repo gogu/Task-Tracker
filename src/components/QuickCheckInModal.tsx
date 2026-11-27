@@ -13,6 +13,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { useTaskContext } from '../context/TaskContext';
+import { DurationStepperInput } from './DurationStepperInput';
 import { ProgressType, PROGRESS_TYPE_CONFIG } from '../types';
 import {
   getTodayString,
@@ -221,14 +222,14 @@ export const QuickCheckInModal: React.FC = () => {
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+        className="guild-modal-overlay z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 8 }}
           transition={{ duration: 0.16 }}
-          className="w-full max-w-lg guild-modal-shell rounded-2xl shadow-2xl overflow-hidden overflow-x-hidden flex flex-col max-h-[90vh]"
+          className="w-full max-w-lg guild-modal-shell rounded-2xl shadow-2xl overflow-hidden overflow-x-hidden flex flex-col max-h-full"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -528,25 +529,23 @@ export const QuickCheckInModal: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="24"
-                    placeholder="例如 1.5"
-                    value={hours}
-                    onChange={(e) => setHours(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs sm:text-sm font-mono bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 pr-8"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400 dark:text-zinc-500 select-none">
-                    h
-                  </span>
-                </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <DurationStepperInput
+                  value={hours}
+                  onChange={setHours}
+                  step={0.1}
+                  min={0}
+                  max={24}
+                  unit="h"
+                  placeholder="例如 1.5"
+                  accent="blue"
+                  variant="modal"
+                  className="w-40 sm:w-44 shrink-0"
+                  ariaLabel="本次投入时长（小时）"
+                />
 
                 {/* Quick hour presets */}
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 flex-wrap">
                   {[0.5, 1.0, 1.5, 2.0, 3.0].map((preset) => (
                     <button
                       key={preset}
@@ -576,23 +575,21 @@ export const QuickCheckInModal: React.FC = () => {
                   留空且当日&gt;0.3h时自动呼出表盘
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="240"
-                    placeholder="如 5"
-                    value={restMinutes}
-                    onChange={(e) => setRestMinutes(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs sm:text-sm font-mono bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 pr-10"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400 dark:text-zinc-500 select-none">
-                    分钟
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <DurationStepperInput
+                  value={restMinutes}
+                  onChange={setRestMinutes}
+                  step={1}
+                  min={0}
+                  max={240}
+                  unit="分钟"
+                  placeholder="如 5"
+                  accent="emerald"
+                  variant="modal"
+                  className="w-40 sm:w-44 shrink-0"
+                  ariaLabel="本次休息时长（分钟）"
+                />
+                <div className="flex items-center gap-1 flex-wrap">
                   {[5, 10, 15, 20].map((mins) => (
                     <button
                       key={mins}
