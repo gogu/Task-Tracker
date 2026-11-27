@@ -59,7 +59,7 @@ export const LocalSyncModal: React.FC = () => {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="px-6 py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-center justify-between guild-modal-header">
+          <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-center justify-between guild-modal-header">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-amber-100/80 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-400">
                 <FolderSync className="w-4 h-4" />
@@ -77,7 +77,7 @@ export const LocalSyncModal: React.FC = () => {
             </button>
           </div>
 
-          <div className="p-6 space-y-4">
+          <div className="p-4 sm:p-6 space-y-4">
             {/* Unsupported browser */}
             {!supported && (
               <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-200">

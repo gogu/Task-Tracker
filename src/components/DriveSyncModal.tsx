@@ -147,7 +147,7 @@ export const DriveSyncModal: React.FC = () => {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="px-6 py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-center justify-between guild-modal-header">
+          <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-center justify-between guild-modal-header">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-amber-100/80 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-400">
                 <Cloud className="w-4 h-4" />
@@ -170,7 +170,7 @@ export const DriveSyncModal: React.FC = () => {
             </button>
           </div>
 
-          <div className="p-6 space-y-5">
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
             {/* Sync Error Notice */}
             {syncErrorMessage && (
               <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">

@@ -10,6 +10,8 @@ import {
   Heart,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Trash2,
   Plus,
   X,
@@ -299,7 +301,7 @@ const PocketWatchDialSvg: React.FC<PocketWatchDialProps> = ({
     <svg
       ref={dialRef}
       viewBox="0 0 220 220"
-      className={`w-56 h-56 sm:w-60 sm:h-60 select-none touch-none drop-shadow-md ${
+      className={`w-44 h-44 sm:w-60 sm:h-60 select-none touch-none drop-shadow-md ${
         interactive ? 'cursor-pointer' : 'cursor-default'
       }`}
       style={{ touchAction: 'none' }}
@@ -508,6 +510,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
   const isCompactScreen = viewportSize.width < 1024;
   const isPortraitOrCompact = isPortraitMode || isCompactScreen;
   const isShortLandscape = !isPortraitMode && viewportSize.height <= 860;
+  const isSoftKeyboardOpen = viewportSize.layoutHeight - viewportSize.height > 120;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -654,6 +657,13 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
   const [pomodoroTaskId, setPomodoroTaskId] = useState<string | null>(null);
   const [pomodoroNote, setPomodoroNote] = useState<string>('');
   const [pomodoroAutoRecord, setPomodoroAutoRecord] = useState<boolean>(true);
+  const [pomodoroAutoPip, setPomodoroAutoPip] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('questkeeper_pomodoro_auto_pip_v1') !== '0';
+    } catch {
+      return true;
+    }
+  });
   const [pomodoroTargetEndMs, setPomodoroTargetEndMs] = useState<number | null>(null);
   const [pomodoroRemainingSeconds, setPomodoroRemainingSeconds] = useState<number>(25 * 60);
   const [pomodoroStartedAtStr, setPomodoroStartedAtStr] = useState<string>('');
@@ -682,9 +692,11 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
   );
 
   const {
+    isSupported: isPipSupported,
     isPipOpen,
     pipWindow,
     pipContainer,
+    openPip,
     closePip,
     togglePip,
   } = usePomodoroPip({
@@ -1489,6 +1501,14 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
       setPomodoroLastSummary(null);
       setPipCompletedNotice(null);
 
+      // Must run synchronously inside user-gesture stack (no preceding await)
+      const isDesktopPointer =
+        typeof window !== 'undefined' &&
+        (!window.matchMedia || window.matchMedia('(pointer: fine)').matches);
+      if (pomodoroAutoPip && isPipSupported && isDesktopPointer && !isPipOpen) {
+        openPip({ silent: true });
+      }
+
       if (targetPhase === 'focus') {
         speak(
           pomodoroBoundTask
@@ -1509,6 +1529,10 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
       pomodoroShortBreakMinutes,
       pomodoroLongBreakMinutes,
       pomodoroBoundTask,
+      pomodoroAutoPip,
+      isPipSupported,
+      isPipOpen,
+      openPip,
       speak,
     ]
   );
@@ -2458,7 +2482,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
 
   const hubChoiceCardPad = isShortLandscape
     ? 'px-2.5 py-2 sm:px-3 sm:py-2 rounded-xl'
-    : 'p-3.5 sm:p-4 rounded-2xl';
+    : 'p-2.5 sm:p-4 rounded-xl sm:rounded-2xl';
 
   const renderCompanionToggle = (tone: 'parchment' | 'dark') => {
     if (isPortraitOrCompact) {
@@ -2537,14 +2561,14 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
           className={
             isShortLandscape
               ? 'px-3 sm:px-4 py-1.5 space-y-1.5'
-              : 'px-3 sm:px-6 py-2 sm:py-2.5 space-y-2'
+              : 'px-2.5 sm:px-6 py-1.5 sm:py-2.5 space-y-1.5 sm:space-y-2'
           }
         >
-        <div className="flex flex-wrap items-center justify-between gap-1.5 xl:gap-2">
+        <div className="flex items-center justify-between gap-1 sm:flex-wrap sm:gap-1.5 xl:gap-2">
           {/* Left: Rank Badge, Live Clock/Period & Guild Micro-Stats */}
           <div className="flex items-center gap-1.5 xl:gap-2 flex-wrap min-w-0">
             <div
-              className={`flex items-center gap-1.5 xl:gap-2 px-2.5 xl:px-3 py-1 xl:py-1.5 rounded-xl bg-gradient-to-r ${guildStats.tierColorClass} border shadow-sm`}
+              className={`flex items-center gap-1.5 xl:gap-2 px-2 sm:px-2.5 xl:px-3 py-1 xl:py-1.5 rounded-xl bg-gradient-to-r ${guildStats.tierColorClass} border shadow-sm`}
               title={`Lv.${guildStats.level} ${guildStats.rankTitle} · 经验值 ${guildStats.exp} EXP（距下一级还需 ${guildStats.nextLevelExp - guildStats.exp} EXP）`}
             >
               <Award className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
@@ -2553,7 +2577,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                   <span>Lv.{guildStats.level}</span>
                   <span className="hidden xl:inline">{guildStats.rankTitle}</span>
                 </div>
-                <div className="w-14 sm:w-16 xl:w-28 h-1.5 bg-black/25 rounded-full overflow-hidden mt-1">
+                <div className="w-10 sm:w-16 xl:w-28 h-1.5 bg-black/25 rounded-full overflow-hidden mt-1">
                   <div
                     className="h-full bg-white/90 rounded-full transition-all duration-300"
                     style={{ width: `${guildStats.levelProgressPct}%` }}
@@ -2563,7 +2587,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
             </div>
 
             <div
-              className="flex items-center gap-1.5 px-2 xl:px-3 py-1.5 rounded-xl bg-black/45 border border-amber-500/30 text-xs sm:text-sm text-amber-100 whitespace-nowrap"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 xl:px-3 py-1.5 rounded-xl bg-black/45 border border-amber-500/30 text-xs sm:text-sm text-amber-100 whitespace-nowrap"
               title={`当前时间 ${periodInfo.clockText} · ${periodInfo.label}（${todayStr}）`}
             >
               <span>{periodInfo.icon}</span>
@@ -2587,8 +2611,8 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
             </div>
           </div>
 
-          {/* Center: Primary Guild Navigation Tabs */}
-          <nav className="flex items-center flex-wrap lg:flex-nowrap gap-1 xl:gap-1.5 bg-black/45 p-1 xl:p-1.5 rounded-xl border border-amber-600/35 shrink-0">
+          {/* Center: Primary Guild Navigation Tabs (sm+; <640px uses Bottom Tab Bar) */}
+          <nav className="hidden sm:flex items-center flex-wrap lg:flex-nowrap gap-1 xl:gap-1.5 bg-black/45 p-1 xl:p-1.5 rounded-xl border border-amber-600/35 shrink-0">
             <button
               type="button"
               onClick={() => switchSection('none')}
@@ -2823,11 +2847,11 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
               </button>
             </div>
 
-            {/* NPC Settings */}
+            {/* NPC Settings (sm+; on <640px moved into More menu to keep header single-row) */}
             <button
               type="button"
               onClick={() => setNpcModalOpen(true)}
-              className="flex items-center gap-1.5 p-2 xl:px-3 xl:py-1.5 min-h-[36px] min-w-[36px] justify-center rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
+              className="hidden sm:flex items-center gap-1.5 p-2 xl:px-3 xl:py-1.5 min-h-[36px] min-w-[36px] justify-center rounded-lg bg-black/40 hover:bg-white/10 border border-amber-600/30 text-amber-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
               title="自定义看板娘名字、预设与立绘"
             >
               <Settings className="w-4 h-4 text-amber-300 shrink-0" />
@@ -2853,6 +2877,19 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
 
               {showMoreMenu && (
                 <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl bg-[#231811] border border-amber-500/45 shadow-2xl p-1.5 z-50 flex flex-col gap-0.5 text-xs sm:text-sm text-amber-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNpcModalOpen(true);
+                      setShowMoreMenu(false);
+                    }}
+                    className="sm:hidden w-full flex items-center gap-2 px-3 py-2 min-h-[36px] rounded-lg hover:bg-white/10 text-left cursor-pointer transition-colors"
+                  >
+                    <Settings className="w-4 h-4 text-amber-300 shrink-0" />
+                    <span>看板娘设置</span>
+                  </button>
+
+                  <div className="sm:hidden border-t border-amber-600/25 my-1" />
                   <button
                     type="button"
                     disabled={!canUndo}
@@ -3392,7 +3429,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                     className={`w-full overflow-y-auto overscroll-contain bg-[#18120e]/92 backdrop-blur-md border-2 border-amber-500/70 shadow-[0_24px_64px_rgba(0,0,0,0.8)] text-amber-50 ${
                       isShortLandscape
                         ? 'px-3.5 pt-7 pb-2.5 sm:px-4 rounded-2xl'
-                        : 'p-4 pt-5 sm:p-5 sm:pt-6 xl:p-6 xl:pt-6 rounded-3xl'
+                        : 'p-3 pt-5 sm:p-5 sm:pt-6 xl:p-6 xl:pt-6 rounded-2xl sm:rounded-3xl'
                     }`}
                   >
                     {/* Large Readable Dialogue Text (pre-sized to prevent layout shift during typing) */}
@@ -3403,7 +3440,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                       className={`grid text-amber-50 font-medium cursor-pointer ${
                         isShortLandscape
                           ? 'text-sm sm:text-[15px] leading-snug min-h-[1.6rem] mt-0.5 mb-2'
-                          : 'text-base sm:text-lg xl:text-xl leading-relaxed min-h-[3.2rem] mt-1 mb-3.5'
+                          : 'text-sm sm:text-lg xl:text-xl leading-snug sm:leading-relaxed min-h-[2.2rem] sm:min-h-[3.2rem] mt-0.5 sm:mt-1 mb-2.5 sm:mb-3.5'
                       }`}
                     >
                       <span
@@ -3422,25 +3459,35 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
 
                     {/* 6 Large RPG Choice Cards */}
                     <div
-                      className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${
-                        isShortLandscape ? 'gap-1.5' : 'gap-2.5'
+                      className={`grid grid-cols-2 md:grid-cols-3 ${
+                        isShortLandscape ? 'gap-1.5' : 'gap-1.5 sm:gap-2.5'
                       }`}
                     >
                       <button
                         type="button"
                         onClick={startCheckInFlow}
                         className={`guild-choice-btn ${hubChoiceCardPad} bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-amber-950 border border-amber-200/80 shadow-lg text-left flex cursor-pointer ${
-                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                          isShortLandscape
+                            ? 'items-center gap-2.5'
+                            : 'items-center gap-2 sm:items-start sm:gap-3'
                         }`}
                       >
-                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-black/15 shrink-0`}>
-                          <CheckCircle2 className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
+                        <div
+                          className={`${
+                            isShortLandscape
+                              ? 'p-1.5 rounded-lg'
+                              : 'p-1.5 sm:p-2 rounded-lg sm:rounded-xl'
+                          } bg-black/15 shrink-0`}
+                        >
+                          <CheckCircle2
+                            className={isShortLandscape ? 'w-4 h-4' : 'w-4 h-4 sm:w-5 sm:h-5'}
+                          />
                         </div>
                         <div className="min-w-0">
-                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-xs sm:text-base'} font-extrabold leading-tight`}>
                             汇报今日进度
                           </div>
-                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-950/80 font-semibold truncate`}>
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'hidden sm:block text-xs mt-1'} text-amber-950/80 font-semibold truncate`}>
                             今日已报 {guildStats.todayCheckedCount} 项 · 攻略中 {guildStats.inProgressCount} 项
                           </div>
                         </div>
@@ -3450,17 +3497,27 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                         type="button"
                         onClick={() => switchSection('ledger')}
                         className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex cursor-pointer ${
-                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                          isShortLandscape
+                            ? 'items-center gap-2.5'
+                            : 'items-center gap-2 sm:items-start sm:gap-3'
                         }`}
                       >
-                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-amber-500/20 text-amber-300 shrink-0`}>
-                          <BookOpen className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
+                        <div
+                          className={`${
+                            isShortLandscape
+                              ? 'p-1.5 rounded-lg'
+                              : 'p-1.5 sm:p-2 rounded-lg sm:rounded-xl'
+                          } bg-amber-500/20 text-amber-300 shrink-0`}
+                        >
+                          <BookOpen
+                            className={isShortLandscape ? 'w-4 h-4' : 'w-4 h-4 sm:w-5 sm:h-5'}
+                          />
                         </div>
                         <div className="min-w-0">
-                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-xs sm:text-base'} font-extrabold leading-tight`}>
                             翻阅委托账本
                           </div>
-                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/75 truncate`}>
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'hidden sm:block text-xs mt-1'} text-amber-200/75 truncate`}>
                             共 {filteredTasks.length} 份委托 · 四状态分类管理
                           </div>
                         </div>
@@ -3470,17 +3527,27 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                         type="button"
                         onClick={() => startCreateTask('in_progress')}
                         className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex cursor-pointer ${
-                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                          isShortLandscape
+                            ? 'items-center gap-2.5'
+                            : 'items-center gap-2 sm:items-start sm:gap-3'
                         }`}
                       >
-                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-emerald-500/20 text-emerald-300 shrink-0`}>
-                          <Plus className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
+                        <div
+                          className={`${
+                            isShortLandscape
+                              ? 'p-1.5 rounded-lg'
+                              : 'p-1.5 sm:p-2 rounded-lg sm:rounded-xl'
+                          } bg-emerald-500/20 text-emerald-300 shrink-0`}
+                        >
+                          <Plus
+                            className={isShortLandscape ? 'w-4 h-4' : 'w-4 h-4 sm:w-5 sm:h-5'}
+                          />
                         </div>
                         <div className="min-w-0">
-                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-xs sm:text-base'} font-extrabold leading-tight`}>
                             登记新的委托
                           </div>
-                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/75 truncate`}>
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'hidden sm:block text-xs mt-1'} text-amber-200/75 truncate`}>
                             立项新游戏 / 书籍 / 影视目标
                           </div>
                         </div>
@@ -3490,17 +3557,27 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                         type="button"
                         onClick={() => triggerRandomPick()}
                         className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex cursor-pointer ${
-                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                          isShortLandscape
+                            ? 'items-center gap-2.5'
+                            : 'items-center gap-2 sm:items-start sm:gap-3'
                         }`}
                       >
-                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-purple-500/20 text-purple-300 shrink-0`}>
-                          <Dices className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
+                        <div
+                          className={`${
+                            isShortLandscape
+                              ? 'p-1.5 rounded-lg'
+                              : 'p-1.5 sm:p-2 rounded-lg sm:rounded-xl'
+                          } bg-purple-500/20 text-purple-300 shrink-0`}
+                        >
+                          <Dices
+                            className={isShortLandscape ? 'w-4 h-4' : 'w-4 h-4 sm:w-5 sm:h-5'}
+                          />
                         </div>
                         <div className="min-w-0">
-                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-xs sm:text-base'} font-extrabold leading-tight`}>
                             帮我抽个坑填
                           </div>
-                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/75 truncate`}>
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'hidden sm:block text-xs mt-1'} text-amber-200/75 truncate`}>
                             从 {guildStats.backlogCount} 项待接取中随机抽取
                           </div>
                         </div>
@@ -3510,7 +3587,9 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                         type="button"
                         onClick={startStaleReview}
                         className={`guild-choice-btn ${hubChoiceCardPad} border text-left flex cursor-pointer ${
-                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                          isShortLandscape
+                            ? 'items-center gap-2.5'
+                            : 'items-center gap-2 sm:items-start sm:gap-3'
                         } ${
                           staleList.length > 0
                             ? 'bg-rose-950/75 hover:bg-rose-900/80 text-rose-50 border-rose-400/55'
@@ -3518,19 +3597,30 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                         }`}
                       >
                         <div
-                          className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} shrink-0 ${
+                          className={`${
+                            isShortLandscape
+                              ? 'p-1.5 rounded-lg'
+                              : 'p-1.5 sm:p-2 rounded-lg sm:rounded-xl'
+                          } shrink-0 ${
                             staleList.length > 0
                               ? 'bg-rose-500/25 text-rose-300'
                               : 'bg-amber-500/20 text-amber-300'
                           }`}
                         >
-                          <BellRing className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
+                          <BellRing
+                            className={isShortLandscape ? 'w-4 h-4' : 'w-4 h-4 sm:w-5 sm:h-5'}
+                          />
                         </div>
                         <div className="min-w-0">
-                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
-                            催更巡检
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-xs sm:text-base'} font-extrabold leading-tight flex items-center gap-1`}>
+                            <span className="truncate">催更巡检</span>
+                            {staleList.length > 0 && (
+                              <span className="sm:hidden text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500/35 text-rose-200 font-mono shrink-0">
+                                {staleList.length}
+                              </span>
+                            )}
                           </div>
-                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/80 truncate`}>
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'hidden sm:block text-xs mt-1'} text-amber-200/80 truncate`}>
                             {staleList.length > 0
                               ? `${staleList.length} 项委托已超 3 天未推进`
                               : '巡检久未推进的攻略中委托'}
@@ -3550,17 +3640,27 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                           );
                         }}
                         className={`guild-choice-btn ${hubChoiceCardPad} bg-[#2a2019]/95 hover:bg-[#382b22] text-amber-50 border border-amber-500/45 text-left flex cursor-pointer ${
-                          isShortLandscape ? 'items-center gap-2.5' : 'items-start gap-3'
+                          isShortLandscape
+                            ? 'items-center gap-2.5'
+                            : 'items-center gap-2 sm:items-start sm:gap-3'
                         }`}
                       >
-                        <div className={`${isShortLandscape ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} bg-sky-500/20 text-sky-300 shrink-0`}>
-                          <Cloud className={isShortLandscape ? 'w-4 h-4' : 'w-5 h-5'} />
+                        <div
+                          className={`${
+                            isShortLandscape
+                              ? 'p-1.5 rounded-lg'
+                              : 'p-1.5 sm:p-2 rounded-lg sm:rounded-xl'
+                          } bg-sky-500/20 text-sky-300 shrink-0`}
+                        >
+                          <Cloud
+                            className={isShortLandscape ? 'w-4 h-4' : 'w-4 h-4 sm:w-5 sm:h-5'}
+                          />
                         </div>
                         <div className="min-w-0">
-                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} font-extrabold leading-tight`}>
+                          <div className={`${isShortLandscape ? 'text-xs sm:text-sm' : 'text-xs sm:text-base'} font-extrabold leading-tight`}>
                             同步与备份
                           </div>
-                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'text-xs mt-1'} text-amber-200/75 truncate`}>
+                          <div className={`${isShortLandscape ? 'text-[11px] leading-tight mt-0.5' : 'hidden sm:block text-xs mt-1'} text-amber-200/75 truncate`}>
                             GitHub Gist / 本地目录 / JSON 备份
                           </div>
                         </div>
@@ -3789,7 +3889,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                   </div>
 
                   {/* 4 Status Bookmark Tabs */}
-                  <div className="flex items-center flex-wrap gap-1.5">
+                  <div className="grid grid-cols-4 sm:flex sm:items-center sm:flex-wrap gap-1.5">
                     {LEDGER_TABS.map((statusKey) => {
                       const meta = RPG_STATUS_META[statusKey];
                       const count = tasksByStatus[statusKey].length;
@@ -3811,7 +3911,9 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                             if (dragOverTab === statusKey) setDragOverTab(null);
                           }}
                           onDrop={(e) => handleTabDrop(e, statusKey)}
-                          className={`px-3.5 py-2 rounded-t-xl text-xs sm:text-sm font-extrabold flex items-center gap-1.5 border-t border-x transition-all cursor-pointer shrink-0 ${
+                          title={meta.rpgLabel}
+                          aria-label={`${meta.rpgLabel} (${count})`}
+                          className={`px-2 sm:px-3.5 py-2 rounded-t-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1 sm:gap-1.5 border-t border-x transition-all cursor-pointer shrink-0 ${
                             isDropTarget
                               ? 'bg-blue-100 dark:bg-blue-900/70 border-blue-500 text-blue-900 dark:text-blue-100 scale-[1.03]'
                               : isActive
@@ -3819,8 +3921,8 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                               : 'bg-black/5 dark:bg-white/5 border-transparent text-stone-600 dark:text-stone-400 hover:bg-black/10 dark:hover:bg-white/10'
                           }`}
                         >
-                          <span>{meta.icon}</span>
-                          <span>{meta.rpgLabel}</span>
+                          <span className="text-sm sm:text-inherit">{meta.icon}</span>
+                          <span className="hidden sm:inline">{meta.rpgLabel}</span>
                           <span className="text-xs font-mono px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
                             {count}
                           </span>
@@ -3852,7 +3954,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                         !showLeftNpcStage ? 'md:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2'
                       }`}
                     >
-                      {currentLedgerTasks.map((task) => {
+                      {currentLedgerTasks.map((task, idx) => {
                         const cat = getQuestCategoryBadge(task.tags);
                         const latestLog = getLatestLogForTask(task.id);
                         const todayLog = getLog(task.id, todayStr);
@@ -3879,7 +3981,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                             }}
                             onDrop={(e) => handleCardDrop(e, task)}
                             onDragEnd={() => handleCardDragEnd(task.id)}
-                            className="relative group rounded-2xl bg-white/88 dark:bg-[#2a231c]/92 border border-amber-800/25 dark:border-amber-700/40 hover:border-amber-600 dark:hover:border-amber-500 p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3 cursor-grab active:cursor-grabbing min-w-0"
+                            className="relative group rounded-2xl bg-white/88 dark:bg-[#2a231c]/92 border border-amber-800/25 dark:border-amber-700/40 hover:border-amber-600 dark:hover:border-amber-500 p-3 sm:p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3 cursor-grab active:cursor-grabbing min-w-0"
                           >
                             {isDropBefore && (
                               <div className="absolute -top-1.5 inset-x-2 h-0.5 bg-amber-500 rounded-full z-10 pointer-events-none" />
@@ -3890,7 +3992,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
 
                             <div className="flex items-start justify-between gap-2 min-w-0">
                               <div className="flex items-start gap-2 min-w-0">
-                                <GripVertical className="w-4 h-4 text-amber-800/35 dark:text-amber-300/35 mt-1 shrink-0" />
+                                <GripVertical className="hidden sm:block w-4 h-4 text-amber-800/35 dark:text-amber-300/35 mt-1 shrink-0" />
                                 <span
                                   className={`shrink-0 text-xs px-2 py-0.5 rounded-lg border font-semibold ${cat.ribbonClass}`}
                                 >
@@ -3916,7 +4018,7 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                               ) : null}
                             </div>
 
-                            <div className="flex items-center justify-between gap-2 flex-wrap pl-6 text-xs">
+                            <div className="flex items-center justify-between gap-2 flex-wrap pl-0 sm:pl-6 text-xs">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 {task.tags.slice(1).map((tag) => (
                                   <button
@@ -3958,31 +4060,70 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                               </div>
                             </div>
 
-                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-800/10 dark:border-white/10">
-                              <button
-                                type="button"
-                                onClick={() => openTaskDetail(task.id)}
-                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-stone-600 dark:text-stone-300 hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-1 transition-colors cursor-pointer"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                                <span>档案</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openInspectTask(task)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 hover:bg-stone-200 dark:hover:bg-stone-700 flex items-center gap-1 transition-colors cursor-pointer"
-                              >
-                                <MessageCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                                <span>办理</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openCheckInForTask(task, todayStr)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>{todayLog ? '改今日报' : '打卡'}</span>
-                              </button>
+                            <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 border-t border-amber-800/10 dark:border-white/10">
+                              <div className="flex sm:hidden items-center gap-1">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={() =>
+                                    idx > 0 &&
+                                    reorderTasks(
+                                      task.id,
+                                      currentLedgerTasks[idx - 1].id,
+                                      'before'
+                                    )
+                                  }
+                                  aria-label="上移委托"
+                                  title="上移"
+                                  className="p-1.5 rounded-lg border border-amber-800/20 dark:border-white/15 text-stone-600 dark:text-amber-200 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                >
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === currentLedgerTasks.length - 1}
+                                  onClick={() =>
+                                    idx < currentLedgerTasks.length - 1 &&
+                                    reorderTasks(
+                                      task.id,
+                                      currentLedgerTasks[idx + 1].id,
+                                      'after'
+                                    )
+                                  }
+                                  aria-label="下移委托"
+                                  title="下移"
+                                  className="p-1.5 rounded-lg border border-amber-800/20 dark:border-white/15 text-stone-600 dark:text-amber-200 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                >
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 sm:gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openTaskDetail(task.id)}
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-stone-600 dark:text-stone-300 hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>档案</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openInspectTask(task)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 hover:bg-stone-200 dark:hover:bg-stone-700 flex items-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                  <span>办理</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openCheckInForTask(task, todayStr)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>{todayLog ? '改今日报' : '打卡'}</span>
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -5475,6 +5616,28 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
                               />
                               <span>完成自动记入今日打卡</span>
                             </label>
+                            {isPipSupported && (
+                              <label className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-stone-700 dark:text-amber-200 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={pomodoroAutoPip}
+                                  onChange={(e) => {
+                                    const next = e.target.checked;
+                                    setPomodoroAutoPip(next);
+                                    try {
+                                      localStorage.setItem(
+                                        'questkeeper_pomodoro_auto_pip_v1',
+                                        next ? '1' : '0'
+                                      );
+                                    } catch {
+                                      // Ignore storage write errors
+                                    }
+                                  }}
+                                  className="rounded border-amber-600 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                                />
+                                <span>开始自动小窗置顶</span>
+                              </label>
+                            )}
                           </div>
                         </div>
 
@@ -6233,6 +6396,76 @@ export const KanbanView: React.FC<{ isStandalonePwa?: boolean }> = ({
           </div>
         )}
       </div>
+
+      {/* Bottom Tab Bar (<640px small phones; hidden when soft keyboard is open) */}
+      {!isSoftKeyboardOpen && (
+        <nav
+          aria-label="主导航栏"
+          className="sm:hidden shrink-0 z-40 bg-[#231811]/95 backdrop-blur-md border-t border-amber-600/40 grid grid-cols-4 gap-1 px-1.5 pt-1"
+          style={{ paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom, 0px))' }}
+        >
+          <button
+            type="button"
+            onClick={() => switchSection('none')}
+            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+              activeOverlay === 'none'
+                ? 'bg-amber-500 text-amber-950 shadow-sm'
+                : 'text-amber-100/80 hover:bg-white/10'
+            }`}
+          >
+            <Home className="w-4 h-4 shrink-0" />
+            <span>大厅</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => switchSection(activeOverlay === 'ledger' ? 'none' : 'ledger')}
+            className={`relative min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+              activeOverlay === 'ledger'
+                ? 'bg-amber-500 text-amber-950 shadow-sm'
+                : 'text-amber-100/80 hover:bg-white/10'
+            }`}
+          >
+            <BookOpen className="w-4 h-4 shrink-0" />
+            <span>账本</span>
+            <span
+              className={`absolute top-1 right-2.5 text-[9px] font-mono px-1 rounded-full leading-tight ${
+                activeOverlay === 'ledger'
+                  ? 'bg-black/20 text-amber-950'
+                  : 'bg-amber-500/25 text-amber-200'
+              }`}
+            >
+              {filteredTasks.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => switchSection(activeOverlay === 'gantt' ? 'none' : 'gantt')}
+            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+              activeOverlay === 'gantt'
+                ? 'bg-amber-500 text-amber-950 shadow-sm'
+                : 'text-amber-100/80 hover:bg-white/10'
+            }`}
+          >
+            <ScrollText className="w-4 h-4 shrink-0" />
+            <span>卷轴</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => switchSection(activeOverlay === 'stats' ? 'none' : 'stats')}
+            className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+              activeOverlay === 'stats'
+                ? 'bg-amber-500 text-amber-950 shadow-sm'
+                : 'text-amber-100/80 hover:bg-white/10'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 shrink-0" />
+            <span>圣殿</span>
+          </button>
+        </nav>
+      )}
 
       {/* Task Detail Drawer scoped inside main view container */}
       <TaskDetailDrawer />

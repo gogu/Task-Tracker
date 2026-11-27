@@ -68,7 +68,7 @@ Architecture Snapshot (TL;DR)
 ### 2.5 专注怀表（番茄钟）与事后休息
 - **交互式 SVG 怀表盘（`PocketWatchDialSvg`）**：支持鼠标/触控拖拽指针直接设定 1–60 分钟时长。
 - **三阶段番茄工作法**：支持专注（默认 25m）、短休（默认 5m）、长休（默认 15m）；可绑定特定委托，专注结束时自动写入一条带起止时间的 `WorkSession` 并累加每日番茄统计；结束时触发 Web Audio 合成提示音。
-- **桌面画中画置顶小窗（Document Picture-in-Picture）**：通过 `usePomodoroPip` + `PomodoroPipClock` 在 Chrome/Edge 桌面端弹出独立置顶极简表盘窗口，主标签切到后台也能实时盯表与查看完成状态。
+- **桌面画中画置顶小窗（Document Picture-in-Picture）**：通过 `usePomodoroPip` + `PomodoroPipClock` 在 Chrome/Edge 桌面端弹出独立置顶极简表盘窗口（开始计时默认自动弹出，可随时开关），主标签切到后台也能实时盯表与查看完成状态。
 - **事后休息提醒**：当日非补标专注打卡超过 `0.3h` 且未手填休息分钟数时，自动引导至 `rest_prompt` / `rest_dial` / `rest_countdown`，结束后记录 `RestSession` 并关联至对应 `WorkSession`。
 
 ### 2.6 多端同步、安全备份与撤销重做

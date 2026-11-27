@@ -68,14 +68,15 @@ export function getGanttDateWindow(
   range: 'week' | 'month' | 'all',
   earliestDate: string | null,
   latestDate: string | null,
-  pivotDate: string = getTodayString()
+  pivotDate: string = getTodayString(),
+  mobileCompact: boolean = false
 ): { startDate: string; endDate: string; dates: string[] } {
   const today = pivotDate;
   
   if (range === 'week') {
-    // Show 10 days around pivotDate (7 past + pivot + 2 next) so columns fit 100% width with zero horizontal overflow
-    const startDate = addDays(today, -7);
-    const endDate = addDays(today, 2);
+    // 7 days on small phones (<640px) for tappable columns; 10 days on tablet/desktop
+    const startDate = addDays(today, mobileCompact ? -5 : -7);
+    const endDate = addDays(today, mobileCompact ? 1 : 2);
     return { startDate, endDate, dates: generateDateRange(startDate, endDate) };
   }
 

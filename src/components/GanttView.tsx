@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronLeft,
@@ -154,6 +154,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
         border: 'border-amber-800/15 dark:border-amber-700/25',
         badge:
           'bg-blue-100/90 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-300/70 dark:border-blue-800/60',
+        dotClass: 'bg-blue-500',
         statusLabel: '攻略中',
       };
     case 'done':
@@ -163,6 +164,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
         border: 'border-emerald-700/20 dark:border-emerald-800/30',
         badge:
           'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-300/70 dark:border-emerald-800/60',
+        dotClass: 'bg-emerald-500',
         statusLabel: '已达成',
       };
     case 'paused':
@@ -172,6 +174,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
         border: 'border-amber-700/20 dark:border-amber-800/35',
         badge:
           'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300/80 dark:border-amber-800/60',
+        dotClass: 'bg-amber-500',
         statusLabel: '已冻结',
       };
     case 'backlog':
@@ -182,6 +185,7 @@ const getRowStatusClasses = (status: TaskStatus) => {
         border: 'border-stone-400/25 dark:border-stone-700/40',
         badge:
           'bg-stone-200/90 text-stone-700 dark:bg-stone-800 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700',
+        dotClass: 'bg-stone-400',
         statusLabel: '待接取',
       };
   }
@@ -253,14 +257,18 @@ const GanttTaskRow = React.memo<GanttTaskRowProps>(
         )}
 
         {/* Task Label Card */}
-        <div className="w-40 sm:w-52 md:w-60 shrink-0 px-2 py-2 border-r border-amber-800/20 dark:border-amber-700/35 flex items-center gap-1.5 min-w-0">
+        <div className="w-28 sm:w-52 md:w-60 shrink-0 px-1.5 sm:px-2 py-2 border-r border-amber-800/20 dark:border-amber-700/35 flex items-center gap-1.5 min-w-0 max-sm:sticky max-sm:left-0 max-sm:z-20 max-sm:bg-[#fbf3df] dark:max-sm:bg-[#201b16]">
           <GripVertical className="w-3.5 h-3.5 text-amber-800/25 dark:text-amber-300/25 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing hidden sm:block" />
           <div
             onClick={() => onOpenDetail(task.id)}
             className="flex items-center gap-1.5 min-w-0 flex-1 cursor-pointer hover:opacity-85 transition-opacity"
           >
             <span
-              className={`shrink-0 text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded font-bold ${statusStyle.badge}`}
+              className={`sm:hidden w-2 h-2 rounded-full shrink-0 ${statusStyle.dotClass}`}
+              aria-hidden="true"
+            />
+            <span
+              className={`hidden sm:inline-block shrink-0 text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded font-bold ${statusStyle.badge}`}
             >
               {statusStyle.statusLabel}
             </span>
@@ -376,7 +384,19 @@ export const GanttView: React.FC = () => {
   const [timeRange, setTimeRange] = useState<GanttTimeRange>('month');
   const [pivotDate, setPivotDate] = useState<string>(getTodayString());
   const [statusFilter, setStatusFilter] = useState<Set<TaskStatus>>(new Set());
+  const [isMobilePhone, setIsMobilePhone] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 639px)').matches : false
+  );
   const todayStr = getTodayString();
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(max-width: 639px)');
+    const onChange = (e: MediaQueryListEvent) => setIsMobilePhone(e.matches);
+    setIsMobilePhone(mql.matches);
+    mql.addEventListener?.('change', onChange);
+    return () => mql.removeEventListener?.('change', onChange);
+  }, []);
 
   const toggleStatusFilter = (status: TaskStatus) => {
     setHoveredCell(null);
@@ -455,8 +475,8 @@ export const GanttView: React.FC = () => {
   }, [displayedTasks, logs]);
 
   const { dates } = useMemo(() => {
-    return getGanttDateWindow(timeRange, earliestDate, latestDate, pivotDate);
-  }, [timeRange, earliestDate, latestDate, pivotDate]);
+    return getGanttDateWindow(timeRange, earliestDate, latestDate, pivotDate, isMobilePhone);
+  }, [timeRange, earliestDate, latestDate, pivotDate, isMobilePhone]);
 
   const isCompactCols = dates.length > 21;
 
@@ -813,7 +833,7 @@ export const GanttView: React.FC = () => {
           <div className="flex items-center bg-amber-900/10 dark:bg-black/30 p-0.5 rounded-lg border border-amber-800/20 text-xs">
             {(
               [
-                { key: 'week', label: '旬·10日' },
+                { key: 'week', label: isMobilePhone ? '周·7日' : '旬·10日' },
                 { key: 'month', label: '月·21日' },
                 { key: 'all', label: '全景·35日' },
               ] as const
@@ -870,7 +890,7 @@ export const GanttView: React.FC = () => {
       </div>
 
       {/* Sub Toolbar: Legends */}
-      <div className="px-3 sm:px-4 py-1.5 border-b border-amber-800/15 dark:border-amber-700/25 bg-[#f7edd5]/75 dark:bg-[#231c15]/90 flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-600 dark:text-stone-300 shrink-0">
+      <div className="hidden sm:flex px-3 sm:px-4 py-1.5 border-b border-amber-800/15 dark:border-amber-700/25 bg-[#f7edd5]/75 dark:bg-[#231c15]/90 flex-wrap items-center justify-between gap-2 text-[11px] text-stone-600 dark:text-stone-300 shrink-0">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2.5">
             <span className="text-amber-900/70 dark:text-amber-300/70 font-bold">印记:</span>
@@ -926,16 +946,23 @@ export const GanttView: React.FC = () => {
         </span>
       </div>
 
-      {/* Main Gantt Grid Container — 100% Width-Adaptive, Zero Horizontal Scrollbar */}
+      {/* Main Gantt Grid Container — 100% Width-Adaptive on sm+; Horizontal Scroll on <640px for 21/35d */}
       <div
         ref={scrollContainerRef}
         onScroll={() => setHoveredCell(null)}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative select-none w-full"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-auto sm:overflow-x-hidden relative select-none w-full"
       >
-        <div className="w-full min-w-0">
+        <div
+          className="w-full min-w-0"
+          style={
+            isMobilePhone && dateColumns.length > 7
+              ? { minWidth: `${112 + dateColumns.length * 30}px` }
+              : undefined
+          }
+        >
           {/* Header Row */}
           <div className="flex w-full min-w-0 border-b border-amber-800/25 dark:border-amber-700/40 sticky top-0 bg-[#f3e6c8]/95 dark:bg-[#2a221a]/95 z-30 backdrop-blur-md">
-            <div className="w-40 sm:w-52 md:w-60 shrink-0 px-2.5 py-2 border-r border-amber-800/20 dark:border-amber-700/35 text-[11px] font-extrabold text-amber-950 dark:text-amber-200 uppercase tracking-wider flex items-center justify-between gap-1">
+            <div className="w-28 sm:w-52 md:w-60 shrink-0 px-2 sm:px-2.5 py-2 border-r border-amber-800/20 dark:border-amber-700/35 text-[11px] font-extrabold text-amber-950 dark:text-amber-200 uppercase tracking-wider flex items-center justify-between gap-1 max-sm:sticky max-sm:left-0 max-sm:z-20 max-sm:bg-[#f3e6c8] dark:max-sm:bg-[#2a221a]">
               <span className="truncate">委托名录 (按主标签)</span>
             </div>
 
@@ -962,7 +989,11 @@ export const GanttView: React.FC = () => {
                         : 'text-stone-500 dark:text-stone-400'
                     }`}
                   >
-                    {isCompactCols ? (col.isToday ? '今' : col.weekdayShort) : col.weekdayFull}
+                    {isCompactCols || isMobilePhone
+                      ? col.isToday
+                        ? '今'
+                        : col.weekdayShort
+                      : col.weekdayFull}
                   </span>
                   <span
                     className={`text-[10px] sm:text-xs font-mono mt-0.5 leading-none ${
@@ -1006,7 +1037,7 @@ export const GanttView: React.FC = () => {
 
                 {/* Group Section Row */}
                 <div className="flex w-full min-w-0 border-b border-amber-800/15 dark:border-amber-700/30 bg-[#efe0bd]/80 dark:bg-[#261e17]/90 cursor-grab active:cursor-grabbing">
-                  <div className="w-40 sm:w-52 md:w-60 shrink-0 py-1.5 px-2 border-r border-amber-800/20 dark:border-amber-700/35 flex items-center gap-1.5 min-w-0">
+                  <div className="w-28 sm:w-52 md:w-60 shrink-0 py-1.5 px-2 border-r border-amber-800/20 dark:border-amber-700/35 flex items-center gap-1.5 min-w-0 max-sm:sticky max-sm:left-0 max-sm:z-20 max-sm:bg-[#efe0bd] dark:max-sm:bg-[#261e17]">
                     <GripVertical className="w-3.5 h-3.5 text-amber-800/40 dark:text-amber-300/40 shrink-0" />
                     <span className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-950 dark:text-amber-100 min-w-0">
                       <span className="shrink-0">{groupCat.icon}</span>

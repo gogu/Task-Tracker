@@ -621,25 +621,25 @@ export const StatsView: React.FC = () => {
       </div>
 
       {/* 2. KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
         {/* Card 1: Recorded Time */}
-        <div className="guild-card border p-4 rounded-2xl shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-900/75 dark:text-amber-200/80">
+        <div className="guild-card border p-3 sm:p-4 rounded-2xl shadow-xs flex flex-col justify-between min-w-0">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] sm:text-xs font-bold text-amber-900/75 dark:text-amber-200/80 truncate">
               {period === 'day' ? '当日冒险投入' : period === 'week' ? '本周累计投入' : '本月累计投入'}
             </span>
-            <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300/60 dark:border-amber-800 flex items-center justify-center">
-              <Clock className="w-4 h-4" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 rounded-lg sm:rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300/60 dark:border-amber-800 flex items-center justify-center">
+              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
 
-          <div className="my-2 flex items-baseline gap-2 flex-wrap">
-            <span className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
+          <div className="my-1.5 sm:my-2 flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+            <span className="text-xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
               {formatHours(metrics.totalHours)}
             </span>
             {period === 'day' && metrics.prevDayDiffHours !== null && (
               <span
-                className={`text-xs font-semibold ${
+                className={`text-[11px] sm:text-xs font-semibold ${
                   metrics.prevDayDiffHours > 0
                     ? 'text-emerald-600 dark:text-emerald-400'
                     : metrics.prevDayDiffHours < 0
@@ -656,7 +656,7 @@ export const StatsView: React.FC = () => {
             )}
           </div>
 
-          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
+          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between flex-wrap gap-1 pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
             {period === 'day' ? (
               <>
                 <span>涉及委托: <strong className="text-stone-800 dark:text-amber-100">{taskBreakdown.length} 项</strong></span>
@@ -672,22 +672,22 @@ export const StatsView: React.FC = () => {
         </div>
 
         {/* Card 2: Completed Task Time Ratio */}
-        <div className="guild-card border p-4 rounded-2xl shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-900/75 dark:text-amber-200/80">
+        <div className="guild-card border p-3 sm:p-4 rounded-2xl shadow-xs flex flex-col justify-between min-w-0">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] sm:text-xs font-bold text-amber-900/75 dark:text-amber-200/80 truncate">
               已达成委托时长占比
             </span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300/60 dark:border-emerald-800 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 rounded-lg sm:rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300/60 dark:border-emerald-800 flex items-center justify-center">
+              <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
 
-          <div className="my-2">
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight">
+          <div className="my-1.5 sm:my-2">
+            <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+              <span className="text-xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight">
                 {metrics.completedRatio.toFixed(1)}%
               </span>
-              <span className="text-xs font-medium text-stone-500 dark:text-stone-400">
+              <span className="text-[11px] sm:text-xs font-medium text-stone-500 dark:text-stone-400">
                 ({formatHours(metrics.completedHours)} / {formatHours(metrics.totalHours)})
               </span>
             </div>
@@ -711,7 +711,7 @@ export const StatsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
+          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between flex-wrap gap-1 pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
               已达成: <strong className="text-stone-800 dark:text-amber-100">{formatHours(metrics.completedHours)}</strong>
@@ -724,24 +724,24 @@ export const StatsView: React.FC = () => {
         </div>
 
         {/* Card 3: Top Task Concentration */}
-        <div className="guild-card border p-4 rounded-2xl shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-900/75 dark:text-amber-200/80">
+        <div className="guild-card border p-3 sm:p-4 rounded-2xl shadow-xs flex flex-col justify-between min-w-0">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] sm:text-xs font-bold text-amber-900/75 dark:text-amber-200/80 truncate">
               头号主打委托占比
             </span>
-            <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-400 border border-violet-300/60 dark:border-violet-800 flex items-center justify-center">
-              <Trophy className="w-4 h-4" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 rounded-lg sm:rounded-xl bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-400 border border-violet-300/60 dark:border-violet-800 flex items-center justify-center">
+              <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
 
           {topTask && topTask.hours > 0 ? (
             <>
-              <div className="my-2">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
+              <div className="my-1.5 sm:my-2">
+                <div className="flex items-baseline gap-1.5 sm:gap-2">
+                  <span className="text-xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
                     {topTask.percentage.toFixed(1)}%
                   </span>
-                  <span className="text-xs font-semibold text-violet-600 dark:text-violet-400">
+                  <span className="text-[11px] sm:text-xs font-semibold text-violet-600 dark:text-violet-400">
                     {formatHours(topTask.hours)}
                   </span>
                 </div>
@@ -753,15 +753,15 @@ export const StatsView: React.FC = () => {
                   {topTask.task.title}
                 </p>
               </div>
-              <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
+              <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between flex-wrap gap-1 pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
                 <span>主分类: <strong className="text-stone-800 dark:text-amber-100">{topTask.task.tags[0] || '未分类'}</strong></span>
                 <span>当期打卡: <strong className="text-stone-800 dark:text-amber-100">{topTask.logCount} 次</strong></span>
               </div>
             </>
           ) : (
             <>
-              <div className="my-2">
-                <span className="text-2xl font-bold text-stone-400 dark:text-stone-600">--</span>
+              <div className="my-1.5 sm:my-2">
+                <span className="text-xl sm:text-2xl font-bold text-stone-400 dark:text-stone-600">--</span>
                 <p className="mt-1 text-xs text-stone-400">当期尚无记录时长的委托</p>
               </div>
               <div className="text-[11px] text-stone-400 pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
@@ -772,29 +772,29 @@ export const StatsView: React.FC = () => {
         </div>
 
         {/* Card 4: Check-in Activity & Completions */}
-        <div className="guild-card border p-4 rounded-2xl shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-900/75 dark:text-amber-200/80">
+        <div className="guild-card border p-3 sm:p-4 rounded-2xl shadow-xs flex flex-col justify-between min-w-0">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] sm:text-xs font-bold text-amber-900/75 dark:text-amber-200/80 truncate">
               有效推进与达成
             </span>
-            <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 border border-orange-300/60 dark:border-orange-800 flex items-center justify-center">
-              <Flame className="w-4 h-4" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 rounded-lg sm:rounded-xl bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 border border-orange-300/60 dark:border-orange-800 flex items-center justify-center">
+              <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
 
-          <div className="my-2 flex items-baseline gap-2 flex-wrap">
-            <span className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
+          <div className="my-1.5 sm:my-2 flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+            <span className="text-xl sm:text-3xl font-extrabold text-stone-900 dark:text-amber-50 tracking-tight">
               {metrics.progressLogCount}
-              <span className="text-sm font-semibold text-stone-500 dark:text-stone-400 ml-1">次推进</span>
+              <span className="text-xs sm:text-sm font-semibold text-stone-500 dark:text-stone-400 ml-1">次推进</span>
             </span>
             {metrics.completedTasksCount > 0 && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800">
+              <span className="text-[11px] sm:text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800">
                 已达成 {metrics.completedTasksCount} 项
               </span>
             )}
           </div>
 
-          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
+          <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between flex-wrap gap-1 pt-2 border-t border-amber-800/15 dark:border-amber-700/25">
             <span>
               活跃天数:{' '}
               <strong className="text-stone-800 dark:text-amber-100">
@@ -1137,9 +1137,11 @@ export const StatsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="pt-3 pb-1 w-full overflow-x-hidden">
+          <div className="pt-3 pb-1 w-full overflow-x-auto sm:overflow-x-hidden">
             <div
               className={`grid items-end min-h-[175px] w-full ${
+                dailySeries.series.length > 10 ? 'min-w-[540px] sm:min-w-0 ' : ''
+              }${
                 period === 'week' ? 'gap-1.5 sm:gap-2' : 'gap-0.5 sm:gap-1'
               }`}
               style={{
@@ -1327,9 +1329,9 @@ export const StatsView: React.FC = () => {
 
         {/* 24-Hour Histogram */}
         {hourlyDistribution.totalWorkHours > 0 || hourlyDistribution.totalRestMinutes > 0 ? (
-          <div className="space-y-2 w-full overflow-x-hidden">
+          <div className="space-y-2 w-full overflow-x-auto sm:overflow-x-hidden">
             <div
-              className="grid items-end h-36 gap-0.5 sm:gap-1 pt-2 px-1 rounded-xl bg-amber-900/[0.04] dark:bg-black/25 border border-amber-800/15 dark:border-white/10"
+              className="grid items-end h-36 gap-0.5 sm:gap-1 pt-2 px-1 rounded-xl bg-amber-900/[0.04] dark:bg-black/25 border border-amber-800/15 dark:border-white/10 min-w-[460px] sm:min-w-0"
               style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
               onMouseLeave={() => setHoveredHour(null)}
             >

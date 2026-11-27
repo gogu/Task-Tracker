@@ -118,10 +118,12 @@ export function usePomodoroPip({
     }
   }, [clearPipState]);
 
-  const openPip = useCallback(() => {
+  const openPip = useCallback((options?: { silent?: boolean }) => {
     const api = getDocumentPipApi();
     if (!api) {
-      onUnsupportedRef.current?.();
+      if (!options?.silent) {
+        onUnsupportedRef.current?.();
+      }
       return;
     }
 

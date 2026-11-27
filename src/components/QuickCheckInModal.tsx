@@ -233,7 +233,7 @@ export const QuickCheckInModal: React.FC = () => {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="px-5 py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-start justify-between guild-modal-header shrink-0">
+          <div className="px-4 py-3 sm:px-5 sm:py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-start justify-between guild-modal-header shrink-0">
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold">
                 <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
@@ -273,7 +273,7 @@ export const QuickCheckInModal: React.FC = () => {
           </div>
 
           {/* Body with scroll */}
-          <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="p-5 space-y-4 overflow-y-auto flex-1">
+          <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="p-3.5 sm:p-5 space-y-3 sm:space-y-4 overflow-y-auto flex-1">
             {/* Date Navigator Bar */}
             <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-800 space-y-2">
               <div className="flex items-center justify-between">

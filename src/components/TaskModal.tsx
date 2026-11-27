@@ -158,7 +158,7 @@ export const TaskModal: React.FC = () => {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Modal Header */}
-          <div className="px-6 py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-center justify-between guild-modal-header">
+          <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-amber-800/20 dark:border-amber-700/30 flex items-center justify-between guild-modal-header">
             <div className="flex items-center gap-2.5">
               <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100 font-bold text-base">
                 <Bookmark className="w-5 h-5 text-amber-600 dark:text-amber-400" />
@@ -179,7 +179,7 @@ export const TaskModal: React.FC = () => {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="p-4 sm:p-6 space-y-3.5 sm:space-y-5">
             {/* Title Input */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1.5">

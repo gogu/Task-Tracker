@@ -101,6 +101,7 @@
 | `localStorage` | `guild_npc_custom_config_v2` | `guildNpc.ts` | Active NPC config `NpcConfig` |
 | `localStorage` | `guild_npc_affection_v1` | `guildNpc.ts` | NPC affection points |
 | `localStorage` | `questkeeper_pomodoro_daily_v1` | `KanbanView.tsx` | Daily Pomodoro completions & focus minutes |
+| `localStorage` | `questkeeper_pomodoro_auto_pip_v1` | `KanbanView.tsx` | Desktop Pomodoro auto-open PiP toggle (`'0'` = off, default on) |
 | `sessionStorage` | `media_task_tracker_history_session_v1` | `TaskContext.tsx` | 30-step undo/redo stack `{ undoStack, redoStack }` |
 | `IndexedDB` | DB `task-tracker-local-sync` / Store `handles` / Key `dir` | `localFolder.ts` | Persisted directory handle `DirHandle` |
 | `Cache Storage` | `guild_npc_image_cache_v1` | `guildNpc.ts` | Offline cache for NPC sprites & backgrounds |
@@ -122,6 +123,7 @@
    - Root container in `src/App.tsx` tracks both `visualViewport.height` (`--app-height`) and `visualViewport.offsetTop` (`--app-offset-top`) to prevent iPadOS/iOS first-focus upward layout shift and bottom black gap.
    - All modal backdrops must use `.guild-modal-overlay` (not `fixed inset-0`) so they stay aligned with the visual viewport when the soft keyboard opens.
    - `src/index.css` enforces `font-size: max(16px, 1rem)` on touch/small screens to prevent Safari focus zoom; `KanbanView.tsx` computes `isPortraitMode` from `layoutHeight` (not `vvH`) so a shrinking keyboard viewport does not flip portrait mode to landscape.
+   - Small-phone (`< 640px`, iPhone SE) layout optimizations (bottom Tab Bar in `KanbanView.tsx`, 2-col hub cards, 7-day Gantt / horizontal scroll in `GanttView.tsx`, 2-col KPI & scrollable charts in `StatsView.tsx`, mobile card reorder buttons) are strictly gated below `sm:` / `640px` so iPad (`>= 744px`) and PC layouts remain unaffected.
    - In `DurationStepperInput.tsx`, never call `e.preventDefault()` inside `onPointerDown` on step buttons (iOS Safari suppresses the subsequent `click`).
 6. **Frozen Archive & HMR Flag**:
    - Never modify `public/v1/` (frozen v1 build archive).
